@@ -4,7 +4,7 @@
    */
 
   import { onMount } from "svelte";
-  // Poistettu tarpeeton getCurrentWindow importti
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { cardStore } from "$lib/stores/cardStore";
   import { settingsStore } from "$lib/stores/settingsStore";
   import CardCarousel from "./CardCarousel.svelte";
@@ -26,14 +26,18 @@
     showSettings = false;
   }
 
-  // Poistettu manuaalinen raahausfunktio (handleHeaderMouseDown)
+  function handleHeaderMouseDown(event: MouseEvent) {
+    if (event.button === 0) { // Only left click
+        getCurrentWindow().startDragging();
+    }
+  }
 </script>
 
 {#if isOpen}
   <div class="hud" class:visible={isOpen}>
-    <header class="hud-header" data-tauri-drag-region>
-      <h1 class="hud-title" data-tauri-drag-region>
-        <span class="title-icon" data-tauri-drag-region>
+    <header class="hud-header" on:mousedown={handleHeaderMouseDown}>
+      <h1 class="hud-title">
+        <span class="title-icon">
           <svg
             width="24"
             height="24"
@@ -41,7 +45,6 @@
             fill="none"
             stroke="currentColor"
             stroke-width="2"
-            style="pointer-events: none;"
           >
             <polygon
               points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
@@ -54,7 +57,7 @@
       <div class="hud-actions">
         <button
           class="settings-button"
-          on:click={handleSettingsClick}
+          on:click|stopPropagation={handleSettingsClick}
           title="Settings"
         >
           <svg
@@ -136,7 +139,6 @@
     align-items: center;
     gap: 0.5rem;
     margin: 0;
-    pointer-events: none;
   }
 
   .title-icon {
