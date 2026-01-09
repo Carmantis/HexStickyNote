@@ -3,9 +3,9 @@
    * HUD Component - Main workspace view
    */
 
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { cardStore } from "$lib/stores/cardStore";
+  import { cardStore, editingCard } from "$lib/stores/cardStore";
   import { settingsStore } from "$lib/stores/settingsStore";
   import CardCarousel from "./CardCarousel.svelte";
   import Settings from "./Settings.svelte";
@@ -13,10 +13,30 @@
   export let isOpen: boolean = false;
 
   let showSettings = false;
+  $: editing = $editingCard;
 
   onMount(async () => {
     await Promise.all([cardStore.loadCards(), settingsStore.loadProviders()]);
   });
+
+  function startResize(direction: string) {
+    getCurrentWindow().startResizeDragging(direction as any);
+  }
+
+  async function handleAddCard() {
+    const card = await cardStore.createCard('# New Note\n\nStart typing...');
+    if (card) {
+      cardStore.enterEditMode(card.id);
+    }
+  }
+
+  async function handleDeleteCard() {
+    if (editing) {
+      if (confirm('Are you sure you want to delete this note?')) {
+        await cardStore.deleteCard(editing.id);
+      }
+    }
+  }
 
   function handleSettingsClick() {
     showSettings = true;
@@ -27,14 +47,25 @@
   }
 
   function handleHeaderMouseDown(event: MouseEvent) {
-    if (event.button === 0) { // Only left click
-        getCurrentWindow().startDragging();
+    // Only drag on left click and if not clicking a button
+    if (event.button === 0 && !(event.target as Element).closest('button')) {
+      getCurrentWindow().startDragging();
     }
   }
 </script>
 
 {#if isOpen}
   <div class="hud" class:visible={isOpen}>
+    <!-- Resize Handles (Invisible window borders) -->
+    <div class="resize-edge top" on:mousedown={() => startResize('North')}></div>
+    <div class="resize-edge bottom" on:mousedown={() => startResize('South')}></div>
+    <div class="resize-edge left" on:mousedown={() => startResize('West')}></div>
+    <div class="resize-edge right" on:mousedown={() => startResize('East')}></div>
+    <div class="resize-corner top-left" on:mousedown={() => startResize('NorthWest')}></div>
+    <div class="resize-corner top-right" on:mousedown={() => startResize('NorthEast')}></div>
+    <div class="resize-corner bottom-left" on:mousedown={() => startResize('SouthWest')}></div>
+    <div class="resize-corner bottom-right" on:mousedown={() => startResize('SouthEast')}></div>
+
     <header class="hud-header" on:mousedown={handleHeaderMouseDown}>
       <h1 class="hud-title">
         <span class="title-icon">
@@ -55,8 +86,33 @@
       </h1>
 
       <div class="hud-actions">
+        <!-- Action Buttons (Note mgmt) -->
+        {#if editing}
+          <button
+            class="action-button delete-button"
+            on:click|stopPropagation={handleDeleteCard}
+            title="Delete Note"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
+        {:else}
+          <button
+            class="action-button"
+            on:click|stopPropagation={handleAddCard}
+            title="New Note"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+        {/if}
+
         <button
-          class="settings-button"
+          class="action-button"
           on:click|stopPropagation={handleSettingsClick}
           title="Settings"
         >
@@ -114,9 +170,12 @@
   .hud-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    justify-content: center;
+    padding: 0.75rem 1.5rem;
+    width: 600px;
+    margin: 1.5rem auto 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--border-radius);
     background: var(--bg-secondary);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -124,7 +183,34 @@
     user-select: none;
     /* Sallitaan klikkaukset headeriin */
     pointer-events: auto;
+    position: relative;
+    min-height: 60px;
+    box-shadow: var(--shadow-md);
   }
+
+  /* Resize Handles (Invisible) */
+  .resize-edge {
+    position: absolute;
+    z-index: 1000;
+    pointer-events: auto; /* Catch clicks even if parent is none */
+  }
+  .resize-corner {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    z-index: 1001;
+    pointer-events: auto;
+  }
+
+  .resize-edge.top { top: 0; left: 0; right: 0; height: 5px; cursor: n-resize; }
+  .resize-edge.bottom { bottom: 0; left: 0; right: 0; height: 5px; cursor: s-resize; }
+  .resize-edge.left { top: 0; bottom: 0; left: 0; width: 5px; cursor: w-resize; }
+  .resize-edge.right { top: 0; bottom: 0; right: 0; width: 5px; cursor: e-resize; }
+
+  .resize-corner.top-left { top: 0; left: 0; cursor: nw-resize; }
+  .resize-corner.top-right { top: 0; right: 0; cursor: ne-resize; }
+  .resize-corner.bottom-left { bottom: 0; left: 0; cursor: sw-resize; }
+  .resize-corner.bottom-right { bottom: 0; right: 0; cursor: se-resize; }
 
   /* Kun hiiri on headerin päällä, näytetään move-kursori, 
      paitsi jos ollaan napin päällä */
@@ -133,12 +219,16 @@
   }
 
   .hud-title {
-    font-size: 1.25rem;
+    font-size: 1.1rem;
     font-weight: 600;
     display: flex;
     align-items: center;
     gap: 0.5rem;
     margin: 0;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
   }
 
   .title-icon {
@@ -150,9 +240,12 @@
   .hud-actions {
     display: flex;
     gap: 0.5rem;
+    margin-left: auto;
+    z-index: 2;
   }
 
-  .settings-button {
+  .settings-button,
+  .action-button {
     background: transparent;
     color: var(--text-secondary);
     padding: 0.5rem;
@@ -168,9 +261,15 @@
     pointer-events: auto;
   }
 
-  .settings-button:hover {
+  .settings-button:hover,
+  .action-button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+  }
+
+  .delete-button:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
   }
 
   .hud-content {
