@@ -6,20 +6,29 @@
    * Floats in the corner of the screen.
    */
 
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher } from "svelte";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
 
   export let isHudOpen: boolean = false;
 
   const dispatch = createEventDispatcher<{ toggle: void }>();
 
   function handleClick() {
-    dispatch('toggle');
+    dispatch("toggle");
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       handleClick();
+    }
+  }
+
+  async function handleMouseDown(event: MouseEvent) {
+    // Right click or Ctrl+click to drag
+    if (event.button === 2 || event.ctrlKey) {
+      event.preventDefault();
+      await getCurrentWindow().startDragging();
     }
   }
 </script>
@@ -28,21 +37,41 @@
   class="orb"
   class:active={isHudOpen}
   on:click={handleClick}
+  on:mousedown={handleMouseDown}
   on:keydown={handleKeydown}
-  title={isHudOpen ? 'Close HUD' : 'Open HUD'}
-  aria-label={isHudOpen ? 'Close HUD' : 'Open HUD'}
+  on:contextmenu={(e) => e.preventDefault()}
+  title={isHudOpen
+    ? "Close HUD (Ctrl+left-click to drag)"
+    : "Open HUD (Ctrl+left-click to drag)"}
+  aria-label={isHudOpen ? "Close HUD" : "Open HUD"}
   aria-expanded={isHudOpen}
 >
   <div class="orb-inner">
     <div class="orb-icon">
       {#if isHudOpen}
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M18 6 6 18"/>
-          <path d="m6 6 12 12"/>
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M18 6 6 18" />
+          <path d="m6 6 12 12" />
         </svg>
       {:else}
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <polygon
+            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+          />
         </svg>
       {/if}
     </div>
@@ -52,16 +81,17 @@
 
 <style>
   .orb {
-    position: fixed;
-    bottom: 2rem;
-    right: 2rem;
+    position: relative;
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    background: linear-gradient(
+      135deg,
+      var(--accent-primary),
+      var(--accent-secondary)
+    );
     border: none;
     cursor: pointer;
-    z-index: 10000;
     padding: 0;
     transition: transform var(--transition-fast);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
@@ -98,17 +128,17 @@
 
   .orb-glow {
     position: absolute;
-    inset: -4px;
+    inset: 2px;
     border-radius: 50%;
     background: var(--accent-primary);
-    filter: blur(12px);
-    opacity: 0.4;
+    filter: blur(6px);
+    opacity: 0.5;
     z-index: 1;
     transition: opacity var(--transition-fast);
   }
 
   .orb:hover .orb-glow {
-    opacity: 0.6;
+    opacity: 0.7;
   }
 
   .orb.active .orb-glow {

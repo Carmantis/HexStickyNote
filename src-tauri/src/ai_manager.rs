@@ -4,9 +4,12 @@
 
 use crate::ai_tools;
 use crate::keyring_store::{AiProvider, KeyringStore};
+use directories::ProjectDirs;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
@@ -44,6 +47,65 @@ struct PendingToolCall {
     arguments: String,
 }
 
+// ============================================================================
+// Persistent Storage Functions
+// ============================================================================
+
+/// Get the path to the active provider preference file
+fn get_active_provider_file() -> Result<PathBuf, String> {
+    let proj_dirs = ProjectDirs::from("com", "HexStickyNote", "HexStickyNote")
+        .ok_or("Failed to determine project directories")?;
+
+    let data_dir = proj_dirs.data_dir();
+    fs::create_dir_all(data_dir).map_err(|e| format!("Failed to create data directory: {}", e))?;
+
+    Ok(data_dir.join("active_provider.txt"))
+}
+
+/// Load the saved active provider from disk
+fn load_active_provider() -> Option<AiProvider> {
+    let file_path = get_active_provider_file().ok()?;
+
+    if !file_path.exists() {
+        return None;
+    }
+
+    let contents = fs::read_to_string(&file_path).ok()?;
+    let provider_str = contents.trim();
+
+    match AiProvider::from_str(provider_str) {
+        Ok(provider) => {
+            // Verify the API key still exists
+            if KeyringStore::has_api_key(provider) {
+                log::info!("Loaded active provider from disk: {}", provider_str);
+                Some(provider)
+            } else {
+                log::warn!("Active provider {} has no API key configured", provider_str);
+                None
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to parse saved provider '{}': {}", provider_str, e);
+            None
+        }
+    }
+}
+
+/// Save the active provider to disk
+fn save_active_provider(provider: AiProvider) -> Result<(), String> {
+    let file_path = get_active_provider_file()?;
+
+    fs::write(&file_path, provider.as_str())
+        .map_err(|e| format!("Failed to save active provider: {}", e))?;
+
+    log::debug!("Saved active provider to disk: {}", provider.as_str());
+    Ok(())
+}
+
+// ============================================================================
+// AI Manager
+// ============================================================================
+
 /// AI Manager handles routing prompts to different providers
 pub struct AiManager {
     client: Client,
@@ -58,15 +120,24 @@ impl Default for AiManager {
 
 impl AiManager {
     pub fn new() -> Self {
+        // Load the saved active provider from disk
+        let saved_provider = load_active_provider();
+
         Self {
             client: Client::new(),
-            active_provider: Arc::new(Mutex::new(None)),
+            active_provider: Arc::new(Mutex::new(saved_provider)),
         }
     }
 
     pub async fn set_active_provider(&self, provider: AiProvider) {
         let mut active = self.active_provider.lock().await;
         *active = Some(provider);
+
+        // Save to disk
+        if let Err(e) = save_active_provider(provider) {
+            log::error!("Failed to save active provider: {}", e);
+        }
+
         log::info!("Active AI provider set to: {}", provider.as_str());
     }
 

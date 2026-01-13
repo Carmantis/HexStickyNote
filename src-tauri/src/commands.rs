@@ -5,6 +5,7 @@
 use crate::ai_manager::AiManager;
 use crate::card_manager::{self, Card};
 use crate::keyring_store::{AiProvider, KeyringStore};
+use crate::window_state::{WindowPosition, WindowState};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -150,4 +151,41 @@ pub async fn save_card(card: Card) -> Result<(), String> {
 #[tauri::command]
 pub async fn delete_card(id: String) -> Result<(), String> {
     card_manager::delete_card(&id)
+}
+
+// ============================================================================
+// Window State Commands
+// ============================================================================
+
+/// Load window positions from disk
+#[tauri::command]
+pub async fn load_window_state() -> Result<WindowState, String> {
+    WindowState::load()
+}
+
+/// Save main window position
+#[tauri::command]
+pub async fn save_main_window_position(x: i32, y: i32) -> Result<(), String> {
+    let mut state = WindowState::load().unwrap_or_default();
+    state.set_main_position(x, y);
+    state.save()
+}
+
+/// Save orb window position
+#[tauri::command]
+pub async fn save_orb_window_position(x: i32, y: i32) -> Result<(), String> {
+    let mut state = WindowState::load().unwrap_or_default();
+    state.set_orb_position(x, y);
+    state.save()
+}
+
+// ============================================================================
+// Application Control Commands
+// ============================================================================
+
+/// Exit the entire application (all windows)
+#[tauri::command]
+pub async fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
 }

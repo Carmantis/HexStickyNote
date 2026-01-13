@@ -6,9 +6,9 @@
    * Center card is highlighted and larger.
    */
 
-  import { cardStore, editingCard, type Card } from '$lib/stores/cardStore';
-  import NoteCard from './Card.svelte';
-  import { onMount } from 'svelte';
+  import { cardStore, editingCard, type Card } from "$lib/stores/cardStore";
+  import NoteCard from "./Card.svelte";
+  import { onMount } from "svelte";
 
   $: cards = $cardStore.cards;
   $: isLoading = $cardStore.isLoading;
@@ -21,10 +21,10 @@
 
   // Calculate rotation angle based on number of cards
   $: angleIncrement = cards.length > 0 ? 360 / cards.length : 120;
-  
+
   // Dynamic radius: Expands as more cards are added to prevent overlap
   // Base radius 450px, adds spacing per card
-  $: radius = Math.max(450, cards.length * 40); 
+  $: radius = Math.max(450, cards.length * 40);
 
   // Watch for edit mode changes and card count changes to maintain alignment
   $: {
@@ -37,40 +37,40 @@
 
       // Case 1: Just exited edit mode
       if (previousEditing) {
-        const index = cards.findIndex(c => c.id === previousEditing?.id);
+        const index = cards.findIndex((c) => c.id === previousEditing?.id);
         if (index !== -1) {
           targetIndex = index;
         } else if (cards.length > 0) {
-           // Card was deleted, clamp index
-           targetIndex = Math.min(currentIndex, cards.length - 1);
+          // Card was deleted, clamp index
+          targetIndex = Math.min(currentIndex, cards.length - 1);
         }
         previousEditing = null;
         shouldRecalculate = true;
       }
-      
+
       // Case 2: Card count changed (e.g. added new card)
       if (cards.length !== oldCardLength) {
-         if (cards.length > oldCardLength) {
-             // If added, usually we want to show the new card (which is at the end)
-             // But if we just exited edit mode (handled above), targetIndex is already set.
-             // If added externally, maybe we stay put?
-             // For now, let's respect targetIndex unless invalid.
-         }
-         targetIndex = Math.min(targetIndex, Math.max(0, cards.length - 1));
-         oldCardLength = cards.length;
-         shouldRecalculate = true;
+        if (cards.length > oldCardLength) {
+          // If added, usually we want to show the new card (which is at the end)
+          // But if we just exited edit mode (handled above), targetIndex is already set.
+          // If added externally, maybe we stay put?
+          // For now, let's respect targetIndex unless invalid.
+        }
+        targetIndex = Math.min(targetIndex, Math.max(0, cards.length - 1));
+        oldCardLength = cards.length;
+        shouldRecalculate = true;
       }
 
       if (shouldRecalculate) {
-          currentIndex = targetIndex;
-          // Snap rotation to align the current card perfectly
-          rotation = -currentIndex * angleIncrement;
+        currentIndex = targetIndex;
+        // Snap rotation to align the current card perfectly
+        rotation = -currentIndex * angleIncrement;
       }
     }
   }
 
-  function rotateCarousel(direction: 'next' | 'prev') {
-    if (direction === 'next') {
+  function rotateCarousel(direction: "next" | "prev") {
+    if (direction === "next") {
       currentIndex = (currentIndex + 1) % cards.length;
       rotation -= angleIncrement;
     } else {
@@ -82,16 +82,16 @@
   function handleKeydown(event: KeyboardEvent) {
     if (editing) return; // Don't navigate while editing
 
-    if (event.key === 'ArrowLeft') {
-      rotateCarousel('prev');
-    } else if (event.key === 'ArrowRight') {
-      rotateCarousel('next');
+    if (event.key === "ArrowLeft") {
+      rotateCarousel("prev");
+    } else if (event.key === "ArrowRight") {
+      rotateCarousel("next");
     }
   }
 
   onMount(() => {
-    document.addEventListener('keydown', handleKeydown);
-    return () => document.removeEventListener('keydown', handleKeydown);
+    document.addEventListener("keydown", handleKeydown);
+    return () => document.removeEventListener("keydown", handleKeydown);
   });
 </script>
 
@@ -104,10 +104,17 @@
   {:else if cards.length === 0}
     <div class="carousel-empty">
       <div class="empty-icon">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <path d="M12 8v8"/>
-          <path d="M8 12h8"/>
+        <svg
+          width="48"
+          height="48"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M12 8v8" />
+          <path d="M8 12h8" />
         </svg>
       </div>
       <h3>No notes yet</h3>
@@ -118,12 +125,19 @@
       <!-- Navigation Arrows -->
       <button
         class="nav-arrow nav-arrow-left"
-        on:click={() => rotateCarousel('prev')}
+        on:click={() => rotateCarousel("prev")}
         disabled={!!editing}
         title="Previous"
       >
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M15 18l-6-6 6-6"/>
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M15 18l-6-6 6-6" />
         </svg>
       </button>
 
@@ -135,7 +149,10 @@
               <div
                 class="carousel-item"
                 class:active={i === currentIndex}
-                style="transform: rotateY({i * angleIncrement}deg) translateZ({radius}px) {i === currentIndex ? 'scale(1.05)' : ''}"
+                style="transform: rotateY({i *
+                  angleIncrement}deg) translateZ({radius}px) {i === currentIndex
+                  ? 'scale(1.05)'
+                  : ''}"
               >
                 <NoteCard {card} />
               </div>
@@ -153,12 +170,19 @@
 
       <button
         class="nav-arrow nav-arrow-right"
-        on:click={() => rotateCarousel('next')}
+        on:click={() => rotateCarousel("next")}
         disabled={!!editing}
         title="Next"
       >
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 18l6-6-6-6"/>
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M9 18l6-6-6-6" />
         </svg>
       </button>
 
@@ -213,7 +237,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .empty-icon {
@@ -244,8 +270,8 @@
 
   .carousel-viewport {
     width: 100%;
-    max-width: 600px;
-    height: 500px;
+    max-width: 550px;
+    height: 450px;
     perspective: 1200px;
     display: flex;
     align-items: center;
@@ -263,15 +289,15 @@
 
   .carousel-item {
     position: absolute;
-    width: var(--card-width, 400px);
-    height: 450px;
+    width: var(--card-width, 350px);
+    height: 400px;
     left: 50%;
     top: 50%;
-    margin-left: calc(var(--card-width, 400px) / -2);
-    margin-top: -225px;
+    margin-left: calc(var(--card-width, 350px) / -2);
+    margin-top: -200px;
     transform-style: preserve-3d;
-    transition: 
-      opacity 0.4s ease, 
+    transition:
+      opacity 0.4s ease,
       transform 0.6s cubic-bezier(0.4, 0, 0.2, 1),
       filter 0.4s ease;
     opacity: 0.3;
@@ -300,9 +326,9 @@
 
   /* Edit container - centered card */
   .edit-container {
-    width: var(--card-width, 600px);
+    width: var(--card-width, 550px);
     height: auto;
-    min-height: 500px;
+    min-height: 450px;
     display: flex;
     align-items: center;
     justify-content: center;

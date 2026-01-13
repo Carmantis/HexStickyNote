@@ -6,6 +6,7 @@
 
 use hex_sticky_note::ai_manager::AiManager;
 use hex_sticky_note::commands::*;
+use tauri::Manager;
 
 fn main() {
     // Initialize logging
@@ -30,7 +31,24 @@ fn main() {
             get_cards,
             save_card,
             delete_card,
+            // Window State
+            load_window_state,
+            save_main_window_position,
+            save_orb_window_position,
+            // Application Control
+            exit_app,
         ])
+        .setup(|app| {
+            // Route orb window to /orb page
+            if let Some(orb_window) = app.get_webview_window("orb") {
+                let _ = orb_window.eval("window.location.href = '/orb'");
+                log::info!("Orb window routed to /orb");
+            } else {
+                log::warn!("Orb window not found during setup");
+            }
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("Error while running HexStickyNote");
 }

@@ -25,6 +25,7 @@ keyring = { version = "3", features = ["windows-native"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 
 # Stream utilities for SSE parsing
 futures = "0.3"
@@ -46,6 +47,9 @@ once_cell = "1"
 # Logging
 log = "0.4"
 env_logger = "0.11"
+
+# Directory utilities for persistent storage
+directories = "5"
 
 [features]
 default = ["custom-protocol"]

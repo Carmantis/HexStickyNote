@@ -148,7 +148,7 @@
 
   <footer class="card-footer">
     <time class="card-time">
-      {new Date(card.updated_at).toLocaleDateString()}
+      {new Date(card.updated_at * 1000).toLocaleDateString()}
     </time>
   </footer>
 </article>
@@ -158,13 +158,13 @@
     background: var(--bg-card);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--border-radius);
-    padding: 1.25rem;
+    padding: 1rem;
     cursor: pointer;
     transition:
       transform var(--transition-fast),
       box-shadow var(--transition-fast),
       border-color var(--transition-fast);
-    min-height: 150px;
+    min-height: 120px;
     display: flex;
     flex-direction: column;
     backdrop-filter: blur(12px);
@@ -181,7 +181,7 @@
     cursor: default;
     box-shadow: var(--shadow-lg), 0 0 20px var(--accent-glow);
     border-color: var(--accent-primary);
-    min-height: 300px;
+    min-height: 250px;
     max-height: 70vh;
     overflow: hidden;
   }

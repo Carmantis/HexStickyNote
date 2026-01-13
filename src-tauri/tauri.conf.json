@@ -13,6 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "HexStickyNote",
         "width": 1200,
         "height": 800,
@@ -21,7 +22,25 @@
         "decorations": false,
         "transparent": true,
         "center": true,
-        "shadow": false
+        "shadow": false,
+        "visible": false
+      },
+      {
+        "label": "orb",
+        "title": "HexStickyNote Orb",
+        "width": 76,
+        "height": 76,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": false,
+        "shadow": false,
+        "visible": true,
+        "x": -100,
+        "y": -100
       }
     ],
     "security": {

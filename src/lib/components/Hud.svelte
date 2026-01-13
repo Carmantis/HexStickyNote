@@ -5,6 +5,7 @@
 
   import { onMount, onDestroy } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { invoke } from "@tauri-apps/api/core";
   import { cardStore, editingCard } from "$lib/stores/cardStore";
   import { settingsStore } from "$lib/stores/settingsStore";
   import CardCarousel from "./CardCarousel.svelte";
@@ -13,6 +14,7 @@
   export let isOpen: boolean = false;
 
   let showSettings = false;
+  let isGhostMode = false;
   $: editing = $editingCard;
 
   onMount(async () => {
@@ -50,6 +52,28 @@
     // Only drag on left click and if not clicking a button
     if (event.button === 0 && !(event.target as Element).closest('button')) {
       getCurrentWindow().startDragging();
+    }
+  }
+
+  async function handleMinimize() {
+    await getCurrentWindow().minimize();
+  }
+
+  async function handleClose() {
+    // Exit entire application (all windows)
+    await invoke('exit_app');
+  }
+
+  async function toggleGhostMode() {
+    isGhostMode = !isGhostMode;
+    const window = getCurrentWindow();
+
+    if (isGhostMode) {
+      // Enable click-through and make more transparent
+      await window.setIgnoreCursorEvents(true);
+    } else {
+      // Disable click-through
+      await window.setIgnoreCursorEvents(false);
     }
   }
 </script>
@@ -128,6 +152,17 @@
             <path
               d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
             />
+          </svg>
+        </button>
+
+        <button
+          class="action-button close-button"
+          on:click|stopPropagation={handleClose}
+          title="Close Application"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18" />
+            <path d="M6 6l12 12" />
           </svg>
         </button>
       </div>
@@ -268,6 +303,11 @@
   }
 
   .delete-button:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .close-button:hover {
     color: #ef4444;
     background: rgba(239, 68, 68, 0.1);
   }
