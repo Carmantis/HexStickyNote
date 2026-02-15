@@ -2,6 +2,8 @@
 
 A modern desktop note-taking application with AI integration and a unique 3D carousel interface. Create, edit, and enhance your notes using powerful AI models – all while keeping your data and API keys secure on your local machine.
 
+> **Note:** Currently, this application is officially supported and tested on **Windows only**.
+
 ![HexStickyNote Screenshot](docs/image.png)
 
 ## Features
