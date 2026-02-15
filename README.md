@@ -74,24 +74,6 @@ HexStickyNote includes an MCP server. You can connect it to Claude Desktop to le
 
 Claude can now use tools like `create_note`, `list_notes`, and `read_note` to help you manage your workspace.
 
-## Data Storage
-
-Notes are stored as Markdown files with YAML front matter in:
-`%APPDATA%\HexStickyNote\HexStickyNote\cards\`
-
-The filename automatically updates based on the first line (Heading) of your note.
-
-Example format:
-```markdown
----
-id: "uuid-goes-here"
-created_at: 1739621430
-updated_at: 1739621430
----
-# Muistiinpanon otsikko
-
-Tämä on muistiinpanon sisältö...
-```
 
 ## Build & Release
 
@@ -108,4 +90,3 @@ npm run build:gpu
 MIT - HexStickyNote
 
 ---
-Made with ❤️ using Tauri, Svelte, and Rust.
