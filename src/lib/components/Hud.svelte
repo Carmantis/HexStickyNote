@@ -26,7 +26,7 @@
   }
 
   async function handleAddCard() {
-    const card = await cardStore.createCard('# Uusi muistiinpano\n\nKirjoita tähän...');
+    const card = await cardStore.createCard('# New Note\n\nStart typing...');
     if (card) {
       cardStore.enterEditMode(card.id);
     }

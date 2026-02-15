@@ -89,7 +89,7 @@ fn extract_title_from_content(content: &str) -> String {
         }
     }
 
-    "Muistiinpano".to_string()
+    "Note".to_string()
 }
 
 /// Sanitize title for use as filename
