@@ -45,7 +45,7 @@ struct CardMetadata {
 }
 
 /// Get the directory where cards are stored
-fn get_cards_directory() -> Result<PathBuf, String> {
+pub fn get_cards_directory() -> Result<PathBuf, String> {
     let proj_dirs = ProjectDirs::from("com", "HexStickyNote", "HexStickyNote")
         .ok_or("Failed to determine project directories")?;
 
@@ -56,10 +56,116 @@ fn get_cards_directory() -> Result<PathBuf, String> {
     Ok(cards_dir)
 }
 
-/// Get the path for a specific card
+/// Extract title from markdown content (first # heading)
+fn extract_title_from_content(content: &str) -> String {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            // Remove leading # and whitespace
+            let title = trimmed.trim_start_matches('#').trim();
+            if !title.is_empty() {
+                return title.to_string();
+            }
+        }
+    }
+
+    // Fallback: use first non-empty line or "Untitled"
+    content
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .unwrap_or_else(|| "Untitled".to_string())
+}
+
+/// Sanitize title for use as filename
+fn sanitize_filename(title: &str) -> String {
+    // Remove or replace invalid Windows filename characters: \ / : * ? " < > |
+    let mut sanitized = title
+        .replace('\\', "-")
+        .replace('/', "-")
+        .replace(':', "-")
+        .replace('*', "-")
+        .replace('?', "")
+        .replace('"', "'")
+        .replace('<', "(")
+        .replace('>', ")")
+        .replace('|', "-");
+
+    // Trim whitespace and dots from ends
+    sanitized = sanitized.trim().trim_end_matches('.').to_string();
+
+    // Limit length to 100 characters
+    if sanitized.len() > 100 {
+        sanitized.truncate(100);
+        sanitized = sanitized.trim().to_string();
+    }
+
+    // Ensure not empty
+    if sanitized.is_empty() {
+        sanitized = "Untitled".to_string();
+    }
+
+    sanitized
+}
+
+/// Get unique filename, handling duplicates by adding (2), (3), etc.
+fn get_unique_filename(cards_dir: &PathBuf, base_name: &str) -> String {
+    let path = cards_dir.join(format!("{}.md", base_name));
+    if !path.exists() {
+        return format!("{}.md", base_name);
+    }
+
+    // File exists, add number suffix
+    let mut counter = 2;
+    loop {
+        let numbered_name = format!("{} ({})", base_name, counter);
+        let path = cards_dir.join(format!("{}.md", numbered_name));
+        if !path.exists() {
+            return format!("{}.md", numbered_name);
+        }
+        counter += 1;
+        if counter > 1000 {
+            // Safety limit
+            return format!("{}.md", Uuid::new_v4());
+        }
+    }
+}
+
+/// Get the path for a specific card (by ID or by content for new cards)
 fn get_card_file_path(id: &str) -> Result<PathBuf, String> {
     let cards_dir = get_cards_directory()?;
-    Ok(cards_dir.join(format!("{}.md", id)))
+
+    // Try to find existing file with this ID in front matter
+    let entries = fs::read_dir(&cards_dir)
+        .map_err(|e| format!("Failed to read cards directory: {}", e))?;
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                // Try to read and parse the file
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok((metadata, _)) = parse_markdown_with_frontmatter(&content) {
+                        if metadata.id == id {
+                            return Ok(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // File not found - this is an error since card should exist
+    Err(format!("Card file not found for ID: {}", id))
+}
+
+/// Get the path for a new card based on its content
+fn get_new_card_file_path(content: &str) -> Result<PathBuf, String> {
+    let cards_dir = get_cards_directory()?;
+    let title = extract_title_from_content(content);
+    let sanitized = sanitize_filename(&title);
+    let filename = get_unique_filename(&cards_dir, &sanitized);
+    Ok(cards_dir.join(filename))
 }
 
 /// Parse YAML front matter and content from markdown file
@@ -141,13 +247,21 @@ fn load_card_from_file(path: &PathBuf) -> Result<Card, String> {
 
 /// Save a single card to a markdown file
 fn save_card_to_file(card: &Card) -> Result<(), String> {
-    let file_path = get_card_file_path(&card.id)?;
     let content = create_markdown_with_frontmatter(card)?;
+
+    // Try to find existing file, or create new one based on content
+    let file_path = match get_card_file_path(&card.id) {
+        Ok(path) => path,
+        Err(_) => {
+            // New card - generate filename from content
+            get_new_card_file_path(&card.content)?
+        }
+    };
 
     fs::write(&file_path, content)
         .map_err(|e| format!("Failed to write card file: {}", e))?;
 
-    log::debug!("Saved card {} to markdown file", card.id);
+    log::debug!("Saved card {} to {:?}", card.id, file_path);
     Ok(())
 }
 
@@ -198,14 +312,27 @@ pub fn update_card(id: &str, content: Option<String>) -> Result<Card, String> {
     let mut cards = CARDS.lock().map_err(|e| e.to_string())?;
 
     if let Some(existing) = cards.iter_mut().find(|c| c.id == id) {
+        // Get old file path before updating content
+        let old_path = get_card_file_path(id).ok();
+
         if let Some(c) = content {
             existing.content = c;
         }
         existing.updated_at = chrono::Utc::now().timestamp();
         let updated = existing.clone();
 
-        // Save to markdown file
+        // Save to markdown file (may get new filename if title changed)
         save_card_to_file(&updated)?;
+
+        // If filename changed (title changed), delete old file
+        if let Some(old_path) = old_path {
+            if let Ok(new_path) = get_card_file_path(id) {
+                if old_path != new_path && old_path.exists() {
+                    let _ = fs::remove_file(&old_path);
+                    log::debug!("Renamed card file from {:?} to {:?}", old_path, new_path);
+                }
+            }
+        }
 
         Ok(updated)
     } else {

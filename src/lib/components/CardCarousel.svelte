@@ -270,8 +270,7 @@
 
   .carousel-viewport {
     width: 100%;
-    max-width: 550px;
-    height: 450px;
+    height: 100%;
     perspective: 1200px;
     display: flex;
     align-items: center;
@@ -289,13 +288,13 @@
 
   .carousel-item {
     position: absolute;
-    width: var(--card-width, 350px);
-    height: 400px;
+    /* Sizes account for ~1.6x perspective magnification (perspective 1200px, translateZ ~450px) */
+    width: clamp(200px, 35vw, 550px);
+    height: clamp(180px, calc(50vh - 3rem), 500px);
     left: 50%;
     top: 50%;
-    margin-left: calc(var(--card-width, 350px) / -2);
-    margin-top: -200px;
     transform-style: preserve-3d;
+    translate: -50% -50%;
     transition:
       opacity 0.4s ease,
       transform 0.6s cubic-bezier(0.4, 0, 0.2, 1),
@@ -324,13 +323,12 @@
     width: 100%;
   }
 
-  /* Edit container - centered card */
+  /* Edit container - matches the visual size of the magnified carousel card */
   .edit-container {
-    width: var(--card-width, 550px);
-    height: auto;
-    min-height: 450px;
+    width: clamp(300px, 55vw, 800px);
+    height: clamp(280px, calc(80vh - 6rem), 750px);
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
   }
 
@@ -378,11 +376,11 @@
   }
 
   .nav-arrow-left {
-    left: 2rem;
+    left: 15vw;
   }
 
   .nav-arrow-right {
-    right: 2rem;
+    right: 15vw;
   }
 
   /* Indicators */

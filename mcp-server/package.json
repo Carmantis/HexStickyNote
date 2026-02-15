@@ -1,0 +1,25 @@
+{
+  "name": "hexstickynote-mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && npm run bundle",
+    "bundle": "esbuild dist/index.js --bundle --platform=node --format=esm --outfile=bundle/hexstickynote-mcp.mjs",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "js-yaml": "^4.1.0",
+    "uuid": "^9.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "@types/uuid": "^9.0.0",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.6.0"
+  }
+}

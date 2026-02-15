@@ -181,8 +181,6 @@
     cursor: default;
     box-shadow: var(--shadow-lg), 0 0 20px var(--accent-glow);
     border-color: var(--accent-primary);
-    min-height: 250px;
-    max-height: 70vh;
     overflow: hidden;
   }
 

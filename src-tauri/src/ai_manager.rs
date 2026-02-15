@@ -1,9 +1,11 @@
 //! AI Manager - Routes prompts to different AI providers
 //!
-//! Supports streaming responses from OpenAI, Anthropic, and Google Gemini.
+//! Supports streaming responses from OpenAI, Anthropic, Google Gemini, and local models.
 
 use crate::ai_tools;
 use crate::keyring_store::{AiProvider, KeyringStore};
+use crate::settings_manager::SettingsManager;
+use crate::{local_inference, local_model};
 use directories::ProjectDirs;
 use futures::StreamExt;
 use reqwest::Client;
@@ -27,6 +29,10 @@ pub enum AiError {
     ApiError(String),
     #[error("Provider not supported: {0}")]
     UnsupportedProvider(String),
+    #[error("Local model error: {0}")]
+    LocalModelError(#[from] local_model::LocalModelError),
+    #[error("Local inference error: {0}")]
+    LocalInferenceError(#[from] local_inference::LocalInferenceError),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,22 +116,18 @@ fn save_active_provider(provider: AiProvider) -> Result<(), String> {
 pub struct AiManager {
     client: Client,
     active_provider: Arc<Mutex<Option<AiProvider>>>,
-}
-
-impl Default for AiManager {
-    fn default() -> Self {
-        Self::new()
-    }
+    settings: Arc<SettingsManager>,
 }
 
 impl AiManager {
-    pub fn new() -> Self {
+    pub fn new(settings: Arc<SettingsManager>) -> Self {
         // Load the saved active provider from disk
         let saved_provider = load_active_provider();
 
         Self {
             client: Client::new(),
             active_provider: Arc::new(Mutex::new(saved_provider)),
+            settings,
         }
     }
 
@@ -159,6 +161,14 @@ impl AiManager {
             .await
             .ok_or_else(|| AiError::NoApiKey("No provider selected".to_string()))?;
 
+        // Check if it's a local model
+        if !provider.requires_api_key() {
+            // Local model inference
+            local_inference::run_local_inference(app, provider, prompt, context, Some(&self.settings)).await?;
+            return Ok(());
+        }
+
+        // Cloud API inference
         let api_key = KeyringStore::get_api_key(provider)
             .map_err(|e| AiError::NoApiKey(e.to_string()))?;
 
@@ -166,6 +176,7 @@ impl AiManager {
             AiProvider::OpenAI => self.stream_openai(app, &api_key, prompt, context).await,
             AiProvider::Anthropic => self.stream_anthropic(app, &api_key, prompt, context).await,
             AiProvider::Google => self.stream_google(app, &api_key, prompt, context).await,
+            _ => Err(AiError::UnsupportedProvider(format!("{:?}", provider))),
         }
     }
 
@@ -177,9 +188,10 @@ impl AiManager {
         context: &str,
     ) -> Result<(), AiError> {
         let tools = ai_tools::get_all_tools();
-        
+        let model = self.settings.get_provider_model(AiProvider::OpenAI);
+
         let body = serde_json::json!({
-            "model": "gpt-4o",
+            "model": model,
             "messages": [
                 {
                     "role": "system",
@@ -250,7 +262,7 @@ Only output long text if you are answering a general question without modifying 
                         // 2. Handle Tool Calls
                         if let Some(tool_calls) = delta["tool_calls"].as_array() {
                             for call in tool_calls {
-                                let index = call["index"].as_u64().unwrap_or(0);
+                                let _index = call["index"].as_u64().unwrap_or(0);
                                 
                                 // New tool call starting (assuming index 0 for simplicity in streaming one tool)
                                 if let Some(id) = call["id"].as_str() {
@@ -301,8 +313,10 @@ Only output long text if you are answering a general question without modifying 
         prompt: &str,
         context: &str,
     ) -> Result<(), AiError> {
+        let model = self.settings.get_provider_model(AiProvider::Anthropic);
+
         let body = serde_json::json!({
-            "model": "claude-3-5-sonnet-20241022",
+            "model": model,
             "max_tokens": 4096,
             "messages": [
                 {
@@ -372,9 +386,11 @@ Only output long text if you are answering a general question without modifying 
         prompt: &str,
         context: &str,
     ) -> Result<(), AiError> {
+        let model = self.settings.get_provider_model(AiProvider::Google);
+
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={}&alt=sse",
-            api_key
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?key={}&alt=sse",
+            model, api_key
         );
 
         let body = serde_json::json!({

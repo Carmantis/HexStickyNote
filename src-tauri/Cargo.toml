@@ -51,9 +51,15 @@ env_logger = "0.11"
 # Directory utilities for persistent storage
 directories = "5"
 
+# Local LLM inference with GGUF models (CPU-only by default, features for GPU)
+llama-cpp-2 = { version = "0.1", features = [] }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+cuda = ["llama-cpp-2/cuda"]
+vulkan = ["llama-cpp-2/vulkan"]
+rocm = ["llama-cpp-2/rocm"]
 
 [profile.release]
 panic = "abort"

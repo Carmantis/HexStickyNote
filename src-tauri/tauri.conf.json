@@ -54,6 +54,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": [
+      "resources/hexstickynote-mcp.mjs"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -62,8 +65,16 @@
       "icons/icon.ico"
     ],
     "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
       "wix": {
         "language": "en-US"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Finnish"],
+        "displayLanguageSelector": true
       }
     }
   }

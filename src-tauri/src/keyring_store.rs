@@ -24,6 +24,37 @@ pub enum AiProvider {
     OpenAI,
     Anthropic,
     Google,
+    Poro2_8B,
+    FinChatSummary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GpuType {
+    Cpu,
+    Vulkan,
+    Cuda,
+    Rocm,
+}
+
+impl GpuType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GpuType::Cpu => "cpu",
+            GpuType::Vulkan => "vulkan",
+            GpuType::Cuda => "cuda",
+            GpuType::Rocm => "rocm",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "vulkan" => GpuType::Vulkan,
+            "cuda" => GpuType::Cuda,
+            "rocm" => GpuType::Rocm,
+            _ => GpuType::Cpu,
+        }
+    }
 }
 
 impl AiProvider {
@@ -32,14 +63,18 @@ impl AiProvider {
             AiProvider::OpenAI => "openai",
             AiProvider::Anthropic => "anthropic",
             AiProvider::Google => "google",
+            AiProvider::Poro2_8B => "poro2_8b",
+            AiProvider::FinChatSummary => "finchat_summary",
         }
     }
 
     pub fn display_name(&self) -> &'static str {
         match self {
-            AiProvider::OpenAI => "OpenAI (GPT-4o)",
-            AiProvider::Anthropic => "Anthropic (Claude 3.5 Sonnet)",
-            AiProvider::Google => "Google (Gemini 1.5 Pro)",
+            AiProvider::OpenAI => "OpenAI",
+            AiProvider::Anthropic => "Anthropic",
+            AiProvider::Google => "Google",
+            AiProvider::Poro2_8B => "Poro 2 8B Instruct",
+            AiProvider::FinChatSummary => "FIN Chat Summarization",
         }
     }
 
@@ -48,12 +83,28 @@ impl AiProvider {
             "openai" => Ok(AiProvider::OpenAI),
             "anthropic" => Ok(AiProvider::Anthropic),
             "google" => Ok(AiProvider::Google),
+            "poro2_8b" => Ok(AiProvider::Poro2_8B),
+            "finchat_summary" => Ok(AiProvider::FinChatSummary),
             _ => Err(KeyringError::InvalidProvider(s.to_string())),
         }
     }
 
     pub fn all() -> Vec<Self> {
-        vec![AiProvider::OpenAI, AiProvider::Anthropic, AiProvider::Google]
+        vec![
+            AiProvider::OpenAI,
+            AiProvider::Anthropic,
+            AiProvider::Google,
+            AiProvider::Poro2_8B,
+            AiProvider::FinChatSummary,
+        ]
+    }
+
+    /// Returns true if this provider requires an API key
+    pub fn requires_api_key(&self) -> bool {
+        match self {
+            AiProvider::OpenAI | AiProvider::Anthropic | AiProvider::Google => true,
+            AiProvider::Poro2_8B | AiProvider::FinChatSummary => false,
+        }
     }
 }
 
@@ -97,16 +148,27 @@ impl KeyringStore {
         Ok(())
     }
 
-    /// Check if an API key exists for a provider
+    /// Check if an API key exists for a provider (or if local model is available)
     pub fn has_api_key(provider: AiProvider) -> bool {
+        // Local providers don't need API keys, check model availability instead
+        if !provider.requires_api_key() {
+            return true; // We'll check model files separately in local_model module
+        }
         Self::get_api_key(provider).is_ok()
     }
 
-    /// Get list of providers with configured API keys
+    /// Get list of providers with configured API keys (or available local models)
     pub fn get_configured_providers() -> Vec<AiProvider> {
         AiProvider::all()
             .into_iter()
-            .filter(|p| Self::has_api_key(*p))
+            .filter(|p| {
+                if p.requires_api_key() {
+                    Self::has_api_key(*p)
+                } else {
+                    // Local models are always "configured" (UI will handle download state)
+                    true
+                }
+            })
             .collect()
     }
 

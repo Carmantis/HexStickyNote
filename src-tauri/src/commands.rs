@@ -4,8 +4,11 @@
 
 use crate::ai_manager::AiManager;
 use crate::card_manager::{self, Card};
+use crate::claude_mcp;
 use crate::keyring_store::{AiProvider, KeyringStore};
-use crate::window_state::{WindowPosition, WindowState};
+use crate::local_model::{self, ModelStatus};
+use crate::settings_manager::SettingsManager;
+use crate::window_state::{WindowState};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -180,6 +183,132 @@ pub async fn save_orb_window_position(x: i32, y: i32) -> Result<(), String> {
 }
 
 // ============================================================================
+// Settings Commands
+// ============================================================================
+
+/// Get all application settings (model configurations, etc.)
+#[tauri::command]
+pub async fn get_all_settings(
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<serde_json::Value, String> {
+    let app_settings = settings.get_all_settings();
+    serde_json::to_value(app_settings).map_err(|e| e.to_string())
+}
+
+/// Set model for a cloud provider
+#[tauri::command]
+pub async fn set_provider_model(
+    provider: String,
+    model: String,
+    is_custom: bool,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<(), String> {
+    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
+    settings
+        .set_provider_model(provider, model, is_custom)
+        .map_err(|e| e.to_string())
+}
+
+/// Set local model configuration
+#[tauri::command]
+pub async fn set_local_model_config(
+    provider: String,
+    repo: String,
+    filename: String,
+    custom_url: Option<String>,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<(), String> {
+    use crate::settings_manager::LocalModelConfig;
+
+    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
+    let config = LocalModelConfig {
+        repo,
+        filename,
+        custom_url,
+    };
+    settings
+        .set_local_model_config(provider, config)
+        .map_err(|e| e.to_string())
+}
+
+/// Set GPU acceleration type
+#[tauri::command]
+pub async fn set_gpu_type(
+    gpu_type: String,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<(), String> {
+    use crate::keyring_store::GpuType;
+    let gpu = GpuType::from_str(&gpu_type);
+    settings.set_gpu_type(gpu).map_err(|e| e.to_string())
+}
+
+/// Get recommended models for each provider
+#[tauri::command]
+pub async fn get_recommended_models() -> Result<serde_json::Value, String> {
+    let models = serde_json::json!({
+        "openai": [
+            { "id": "gpt-4o", "name": "GPT-4o (Recommended)" },
+            { "id": "gpt-4o-mini", "name": "GPT-4o Mini (Faster, cheaper)" },
+            { "id": "gpt-4-turbo", "name": "GPT-4 Turbo" },
+            { "id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo (Legacy)" },
+        ],
+        "anthropic": [
+            { "id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet (Recommended)" },
+            { "id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku (Faster)" },
+            { "id": "claude-3-opus-20240229", "name": "Claude 3 Opus (Most capable)" },
+        ],
+        "google": [
+            { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Recommended)" },
+            { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Most capable)" },
+            { "id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro (Legacy)" },
+            { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash (Legacy)" },
+        ],
+    });
+    Ok(models)
+}
+
+// ============================================================================
+// Local Model Commands
+// ============================================================================
+
+/// Get status of a local model (downloaded, file size, etc.)
+#[tauri::command]
+pub async fn get_local_model_status(
+    provider: String,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<ModelStatus, String> {
+    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
+    local_model::get_model_status(provider, Some(&settings)).map_err(|e| e.to_string())
+}
+
+/// Download a local model from HuggingFace
+/// Progress is emitted as 'local-model-download-progress' events
+/// Completion is emitted as 'local-model-download-complete' event
+#[tauri::command]
+pub async fn download_local_model(
+    provider: String,
+    app: tauri::AppHandle,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<(), String> {
+    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
+    local_model::download_model(&app, provider, Some(&settings))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a downloaded local model
+#[tauri::command]
+pub async fn delete_local_model(
+    provider: String,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<(), String> {
+    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
+    local_model::delete_model(provider, Some(&settings))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
 // Application Control Commands
 // ============================================================================
 
@@ -187,5 +316,61 @@ pub async fn save_orb_window_position(x: i32, y: i32) -> Result<(), String> {
 #[tauri::command]
 pub async fn exit_app(app: tauri::AppHandle) -> Result<(), String> {
     app.exit(0);
+    Ok(())
+}
+
+// ============================================================================
+// Claude Desktop MCP Commands
+// ============================================================================
+
+/// Check Claude Desktop MCP integration status
+#[tauri::command]
+pub async fn check_claude_mcp(app: tauri::AppHandle) -> Result<claude_mcp::ClaudeMcpStatus, String> {
+    claude_mcp::check_status(&app)
+}
+
+/// Setup Claude Desktop MCP integration
+#[tauri::command]
+pub async fn setup_claude_mcp(app: tauri::AppHandle) -> Result<(), String> {
+    claude_mcp::setup(&app)
+}
+
+/// Remove Claude Desktop MCP integration
+#[tauri::command]
+pub async fn remove_claude_mcp() -> Result<(), String> {
+    claude_mcp::remove()
+}
+
+/// Open cards directory in file explorer
+#[tauri::command]
+pub async fn open_cards_directory() -> Result<(), String> {
+    let cards_dir = card_manager::get_cards_directory()
+        .map_err(|e| format!("Failed to get cards directory: {}", e))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&cards_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open explorer: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&cards_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&cards_dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {}", e))?;
+    }
+
+    log::info!("Opened cards directory: {:?}", cards_dir);
     Ok(())
 }

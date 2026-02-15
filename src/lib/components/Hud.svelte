@@ -76,6 +76,18 @@
       await window.setIgnoreCursorEvents(false);
     }
   }
+
+  async function handleOpenCardsFolder() {
+    try {
+      await invoke('open_cards_directory');
+    } catch (e) {
+      console.error('Failed to open cards directory:', e);
+    }
+  }
+
+  async function handleRefreshCards() {
+    await cardStore.loadCards();
+  }
 </script>
 
 {#if isOpen}
@@ -91,6 +103,44 @@
     <div class="resize-corner bottom-right" on:mousedown={() => startResize('SouthEast')}></div>
 
     <header class="hud-header" on:mousedown={handleHeaderMouseDown}>
+      <div class="hud-left-actions">
+        <button
+          class="action-button"
+          on:click|stopPropagation={handleOpenCardsFolder}
+          title="Open Cards Folder"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+
+        <button
+          class="action-button"
+          on:click|stopPropagation={handleRefreshCards}
+          title="Refresh Cards"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+        </button>
+      </div>
+
       <h1 class="hud-title">
         <span class="title-icon">
           <svg
@@ -205,7 +255,7 @@
   .hud-header {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     padding: 0.75rem 1.5rem;
     width: 600px;
     margin: 1.5rem auto 0;
@@ -253,8 +303,16 @@
     cursor: move;
   }
 
+  .hud-left-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
   .hud-title {
     font-size: 1.1rem;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     font-weight: 600;
     display: flex;
     align-items: center;

@@ -6,9 +6,14 @@
 pub mod ai_manager;
 pub mod ai_tools;
 pub mod card_manager;
+pub mod claude_mcp;
 pub mod commands;
 pub mod keyring_store;
+pub mod local_inference;
+pub mod local_model;
+pub mod settings_manager;
 pub mod window_state;
 
 pub use ai_manager::AiManager;
 pub use keyring_store::{AiProvider, KeyringStore};
+pub use settings_manager::SettingsManager;
