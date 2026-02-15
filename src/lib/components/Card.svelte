@@ -16,7 +16,7 @@
   // Props
   export let card: Card;
 
-  const DEFAULT_TEXT = '# New Note\n\nStart typing...';
+  const DEFAULT_TEXT = '# Uusi muistiinpano\n\nKirjoita tähän...';
 
   // Local state
   let editorContent = card.content;

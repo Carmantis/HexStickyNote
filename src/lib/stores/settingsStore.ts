@@ -24,6 +24,7 @@ export interface Provider {
 export interface AiStreamChunk {
   chunk: string;
   done: boolean;
+  gpu_info?: string;
 }
 
 interface SettingsState {
@@ -32,6 +33,7 @@ interface SettingsState {
   isLoading: boolean;
   isStreaming: boolean;
   error: string | null;
+  currentGpuInfo: string | null;
 }
 
 // ============================================================================
@@ -44,7 +46,8 @@ function createSettingsStore() {
     activeProviderId: null,
     isLoading: false,
     isStreaming: false,
-    error: null
+    error: null,
+    currentGpuInfo: null
   });
 
   let streamUnlisten: UnlistenFn | null = null;
@@ -144,11 +147,15 @@ function createSettingsStore() {
         streamUnlisten = null;
       }
 
-      update(s => ({ ...s, isStreaming: true, error: null }));
+      update(s => ({ ...s, isStreaming: true, error: null, currentGpuInfo: null }));
 
       try {
         // Set up event listener for streaming chunks
         streamUnlisten = await listen<AiStreamChunk>('ai-stream-chunk', (event) => {
+          if (event.payload.gpu_info) {
+            update(s => ({ ...s, currentGpuInfo: event.payload.gpu_info || null }));
+          }
+
           if (event.payload.done) {
             update(s => ({ ...s, isStreaming: false }));
             onDone();

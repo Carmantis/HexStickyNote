@@ -56,12 +56,18 @@ pub fn get_cards_directory() -> Result<PathBuf, String> {
     Ok(cards_dir)
 }
 
-/// Extract title from markdown content (first # heading)
+/// Extract title from markdown content (first # heading or first meaningful line)
 fn extract_title_from_content(content: &str) -> String {
+    // 1. Look for first h1 (# Title)
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with('#') {
-            // Remove leading # and whitespace
+        if trimmed.starts_with("# ") {
+            let title = trimmed.trim_start_matches("# ").trim();
+            if !title.is_empty() {
+                return title.to_string();
+            }
+        } else if trimmed.starts_with('#') {
+            // Handle #Title (no space)
             let title = trimmed.trim_start_matches('#').trim();
             if !title.is_empty() {
                 return title.to_string();
@@ -69,12 +75,21 @@ fn extract_title_from_content(content: &str) -> String {
         }
     }
 
-    // Fallback: use first non-empty line or "Untitled"
-    content
-        .lines()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim().to_string())
-        .unwrap_or_else(|| "Untitled".to_string())
+    // 2. Fallback: use first non-empty line that doesn't look like an AI command or metadata
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with("---") {
+            // Truncate long lines for title
+            let mut title = trimmed.to_string();
+            if title.len() > 50 {
+                title.truncate(50);
+                title.push_str("...");
+            }
+            return title;
+        }
+    }
+
+    "Muistiinpano".to_string()
 }
 
 /// Sanitize title for use as filename
@@ -246,7 +261,7 @@ fn load_card_from_file(path: &PathBuf) -> Result<Card, String> {
 }
 
 /// Save a single card to a markdown file
-fn save_card_to_file(card: &Card) -> Result<(), String> {
+fn save_card_to_file(card: &Card) -> Result<PathBuf, String> {
     let content = create_markdown_with_frontmatter(card)?;
 
     // Try to find existing file, or create new one based on content
@@ -262,7 +277,7 @@ fn save_card_to_file(card: &Card) -> Result<(), String> {
         .map_err(|e| format!("Failed to write card file: {}", e))?;
 
     log::debug!("Saved card {} to {:?}", card.id, file_path);
-    Ok(())
+    Ok(file_path)
 }
 
 /// Delete a card's markdown file
@@ -296,7 +311,7 @@ pub fn create_card(content: String) -> Result<Card, String> {
     cards.push(card.clone());
 
     // Save to markdown file
-    save_card_to_file(&card)?;
+    let _ = save_card_to_file(&card)?;
 
     Ok(card)
 }
@@ -321,16 +336,29 @@ pub fn update_card(id: &str, content: Option<String>) -> Result<Card, String> {
         existing.updated_at = chrono::Utc::now().timestamp();
         let updated = existing.clone();
 
-        // Save to markdown file (may get new filename if title changed)
-        save_card_to_file(&updated)?;
+        // Save to markdown file
+        // Note: save_card_to_file will find the OLD path if it exists
+        // so we need to handle the rename manually if the title changed
+        let current_path = if let Some(ref path) = old_path {
+            // It exists, let's write to it first
+            let file_content = create_markdown_with_frontmatter(&updated)?;
+            fs::write(path, file_content).map_err(|e| e.to_string())?;
+            path.clone()
+        } else {
+            save_card_to_file(&updated)?
+        };
 
-        // If filename changed (title changed), delete old file
+        // If title changed, rename the file
         if let Some(old_path) = old_path {
-            if let Ok(new_path) = get_card_file_path(id) {
-                if old_path != new_path && old_path.exists() {
-                    let _ = fs::remove_file(&old_path);
-                    log::debug!("Renamed card file from {:?} to {:?}", old_path, new_path);
-                }
+            let cards_dir = get_cards_directory()?;
+            let new_title = extract_title_from_content(&updated.content);
+            let sanitized = sanitize_filename(&new_title);
+            let new_filename = get_unique_filename(&cards_dir, &sanitized);
+            let new_path = cards_dir.join(new_filename);
+
+            if old_path != new_path {
+                fs::rename(&old_path, &new_path).map_err(|e| format!("Failed to rename file: {}", e))?;
+                log::debug!("Renamed card file from {:?} to {:?}", old_path, new_path);
             }
         }
 

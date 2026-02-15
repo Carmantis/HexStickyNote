@@ -108,7 +108,7 @@ pub async fn run_local_inference(
 
     // Get GPU setting
     let gpu_type = settings.map(|s| s.get_gpu_type()).unwrap_or(crate::keyring_store::GpuType::Cpu);
-    let n_gpu_layers = if gpu_type != crate::keyring_store::GpuType::Cpu {
+    let mut n_gpu_layers = if gpu_type != crate::keyring_store::GpuType::Cpu {
         log::info!("GPU acceleration enabled ({:?}), offloading 32 layers", gpu_type);
         32
     } else {
@@ -116,10 +116,30 @@ pub async fn run_local_inference(
     };
 
     // Load model
-    let model_params = LlamaModelParams::default()
+    let mut model_params = LlamaModelParams::default()
         .with_n_gpu_layers(n_gpu_layers);
-    let model = LlamaModel::load_from_file(backend, model_path, &model_params)
-        .map_err(|e| LocalInferenceError::ModelLoadError(e.to_string()))?;
+    
+    let mut current_n_gpu_layers = n_gpu_layers;
+    let model = match LlamaModel::load_from_file(backend, &model_path, &model_params) {
+        Ok(m) => m,
+        Err(e) => {
+            if n_gpu_layers > 0 {
+                log::warn!("Failed to load model with GPU ({} layers): {}. Falling back to CPU.", n_gpu_layers, e);
+                current_n_gpu_layers = 0;
+                model_params = LlamaModelParams::default().with_n_gpu_layers(0);
+                LlamaModel::load_from_file(backend, &model_path, &model_params)
+                    .map_err(|e2| LocalInferenceError::ModelLoadError(format!("CPU fallback also failed: {}", e2)))?
+            } else {
+                return Err(LocalInferenceError::ModelLoadError(e.to_string()));
+            }
+        }
+    };
+
+    let actual_device = if current_n_gpu_layers > 0 {
+        "GPU".to_string()
+    } else {
+        "CPU".to_string()
+    };
 
     // Create context with conservative parameters for CPU inference
     let ctx_params = LlamaContextParams::default()
@@ -287,6 +307,7 @@ pub async fn run_local_inference(
                         AiStreamChunk {
                             chunk: text.clone(),
                             done: false,
+                            gpu_info: Some(actual_device.clone()),
                         },
                     )
                     .ok();
@@ -323,6 +344,7 @@ pub async fn run_local_inference(
         AiStreamChunk {
             chunk: String::new(),
             done: true,
+            gpu_info: Some(actual_device),
         },
     )
     .ok();

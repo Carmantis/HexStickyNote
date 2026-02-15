@@ -39,6 +39,7 @@ pub enum AiError {
 pub struct AiStreamChunk {
     pub chunk: String,
     pub done: bool,
+    pub gpu_info: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,6 +245,7 @@ Only output long text if you are answering a general question without modifying 
                         app.emit("ai-stream-chunk", AiStreamChunk {
                             chunk: String::new(),
                             done: true,
+                            gpu_info: None,
                         }).ok();
                         return Ok(());
                     }
@@ -256,6 +258,7 @@ Only output long text if you are answering a general question without modifying 
                             app.emit("ai-stream-chunk", AiStreamChunk {
                                 chunk: content.to_string(),
                                 done: false,
+                                gpu_info: None,
                             }).ok();
                         }
 
@@ -359,6 +362,7 @@ Only output long text if you are answering a general question without modifying 
                                     app.emit("ai-stream-chunk", AiStreamChunk {
                                         chunk: text.to_string(),
                                         done: false,
+                                        gpu_info: None,
                                     }).ok();
                                 }
                             }
@@ -366,6 +370,7 @@ Only output long text if you are answering a general question without modifying 
                                 app.emit("ai-stream-chunk", AiStreamChunk {
                                     chunk: String::new(),
                                     done: true,
+                                    gpu_info: None,
                                 }).ok();
                                 return Ok(());
                             }
@@ -431,6 +436,7 @@ Only output long text if you are answering a general question without modifying 
                             app.emit("ai-stream-chunk", AiStreamChunk {
                                 chunk: text.to_string(),
                                 done: false,
+                                gpu_info: None,
                             }).ok();
                         }
 
@@ -438,6 +444,7 @@ Only output long text if you are answering a general question without modifying 
                             app.emit("ai-stream-chunk", AiStreamChunk {
                                 chunk: String::new(),
                                 done: true,
+                                gpu_info: None,
                             }).ok();
                             return Ok(());
                         }

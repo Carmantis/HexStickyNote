@@ -409,11 +409,9 @@
               class="styled-select"
             >
               <option value="cpu">None (CPU only)</option>
-              <option value="vulkan">Vulkan (Universal GPU)</option>
-              <option value="cuda">CUDA (NVIDIA only)</option>
-              <option value="rocm">ROCm (AMD only)</option>
+              <option value="vulkan">Enabled (GPU Acceleration)</option>
             </select>
-            <p class="config-hint">Requires a compatible GPU and drivers. Vulkan works on most modern hardware.</p>
+            <p class="config-hint">Requires a compatible GPU and drivers. Uses Vulkan for maximum compatibility.</p>
           </div>
         </div>
 

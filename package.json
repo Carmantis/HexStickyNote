@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev:gpu": "set LLAMA_VULKAN=1 && npm run tauri dev -- --features vulkan",
+    "build:gpu": "set LLAMA_VULKAN=1 && npm run tauri build -- --features vulkan"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",

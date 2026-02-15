@@ -91,6 +91,16 @@
     </button>
   </div>
 
+  {#if isStreaming && $settingsStore.currentGpuInfo}
+    <div class="gpu-indicator">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="2" width="20" height="20" rx="2" ry="2"/>
+        <path d="M6 12h12M12 6v12"/>
+      </svg>
+      <span>Using {$settingsStore.currentGpuInfo}</span>
+    </div>
+  {/if}
+
   {#if $settingsStore.error}
     <p class="prompt-error">{$settingsStore.error}</p>
   {/if}
@@ -181,5 +191,15 @@
     font-size: 0.75rem;
     color: #ef4444;
     margin: 0;
+  }
+
+  .gpu-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.7rem;
+    color: var(--accent-primary);
+    padding: 0 0.25rem;
+    opacity: 0.8;
   }
 </style>
