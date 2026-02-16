@@ -40,10 +40,18 @@ pub enum LocalInferenceError {
 }
 
 /// Initialize the llama backend (call once at startup)
-pub fn init_backend() {
-    LLAMA_BACKEND
-        .set(LlamaBackend::init().expect("Failed to initialize llama backend"))
-        .expect("Backend already initialized");
+/// Returns false if initialization fails (e.g. missing Vulkan drivers)
+pub fn init_backend() -> bool {
+    match LlamaBackend::init() {
+        Ok(backend) => {
+            let _ = LLAMA_BACKEND.set(backend);
+            true
+        }
+        Err(e) => {
+            log::warn!("Llama backend initialization failed (local AI will be unavailable): {}", e);
+            false
+        }
+    }
 }
 
 /// Get the global backend instance

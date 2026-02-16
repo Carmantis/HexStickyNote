@@ -17,9 +17,12 @@ fn main() {
 
     log::info!("Starting HexStickyNote...");
 
-    // Initialize llama backend for local models
-    local_inference::init_backend();
-    log::info!("Llama backend initialized");
+    // Initialize llama backend for local models (non-fatal if it fails)
+    if local_inference::init_backend() {
+        log::info!("Llama backend initialized");
+    } else {
+        log::warn!("Llama backend not available - local AI features disabled");
+    }
 
     // Initialize settings manager
     let settings = Arc::new(SettingsManager::new().expect("Failed to initialize settings"));
