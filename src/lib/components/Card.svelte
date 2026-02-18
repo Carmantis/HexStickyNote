@@ -155,7 +155,7 @@
 
 <style>
   .card {
-    background: var(--bg-card);
+    background: rgb(18, 18, 26);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--border-radius);
     padding: 1rem;
@@ -167,8 +167,6 @@
     min-height: 120px;
     display: flex;
     flex-direction: column;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
   }
 
   .card:hover:not(.editing) {
@@ -187,8 +185,10 @@
   .card-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     user-select: text;
     padding-right: 0.5rem; /* Space for scrollbar */
+    background: rgb(18, 18, 26);
   }
 
   .card-editor {
@@ -199,6 +199,7 @@
     overflow: hidden;
     height: 100%;
     min-height: 0; /* Important for flex child scrolling */
+    background: rgb(18, 18, 26);
   }
 
   .card-footer {

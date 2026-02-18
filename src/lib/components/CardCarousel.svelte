@@ -23,8 +23,8 @@
   $: angleIncrement = cards.length > 0 ? 360 / cards.length : 120;
 
   // Dynamic radius: Expands as more cards are added to prevent overlap
-  // Base radius 450px, adds spacing per card
-  $: radius = Math.max(450, cards.length * 40);
+  // Increased to 500px to spread cards more to the sides
+  $: radius = Math.max(500, cards.length * 35);
 
   // Watch for edit mode changes and card count changes to maintain alignment
   $: {
@@ -152,7 +152,7 @@
                 style="transform: rotateY({i *
                   angleIncrement}deg) translateZ({radius}px) {i === currentIndex
                   ? 'scale(1.05)'
-                  : ''}"
+                  : ''}; {i === currentIndex ? '--card-bg: rgb(18, 18, 26); --card-backdrop: none;' : ''}"
               >
                 <NoteCard {card} />
               </div>
@@ -311,9 +311,11 @@
     pointer-events: auto;
   }
 
-  /* Make the active card more solid for readability */
+  /* Make the active card more solid for readability - completely opaque */
   .carousel-item.active :global(.card) {
-    background: rgba(26, 26, 36, 0.95);
+    background: rgb(18, 18, 26) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     border-color: var(--accent-primary);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
   }

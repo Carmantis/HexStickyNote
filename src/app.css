@@ -37,6 +37,7 @@
 html, body {
   height: 100%;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: clamp(13px, 1.1vw, 16px);
   background: transparent !important;
   color: var(--text-primary);
   overflow: hidden;
