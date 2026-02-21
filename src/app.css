@@ -1,11 +1,11 @@
 /* HexStickyNote - Global Styles */
 
 :root {
-  /* Colors - Dark Theme with Glass Morphism */
-  --bg-primary: transparent;
-  --bg-secondary: rgba(18, 18, 26, 0.7);
-  --bg-card: rgba(26, 26, 36, 0.6);
-  --bg-hover: rgba(37, 37, 48, 0.7);
+  /* Colors - Dark Theme - Opaque for 3D consistency */
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-card: #1a1a24;
+  --bg-hover: #252530;
 
   --text-primary: #e8e8f0;
   --text-secondary: #a0a0b0;

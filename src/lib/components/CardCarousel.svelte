@@ -293,7 +293,11 @@
     height: clamp(180px, calc(50vh - 3rem), 500px);
     left: 50%;
     top: 50%;
-    transform-style: preserve-3d;
+    /* Remove preserve-3d to flatten the card and its contents into a single plane,
+       which fixes transparency issues where background cards bleed through the content area. */
+    transform-style: flat;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
     translate: -50% -50%;
     transition:
       opacity 0.4s ease,
@@ -309,15 +313,18 @@
     filter: none;
     z-index: 100;
     pointer-events: auto;
+    /* Ensure the active card is pushed forward to definitely clear the background cards */
+    transform: translateZ(5px);
   }
 
   /* Make the active card more solid for readability - completely opaque */
   .carousel-item.active :global(.card) {
-    background: rgb(18, 18, 26) !important;
+    background: #12121a !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     border-color: var(--accent-primary);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+    transform: translateZ(0);
   }
 
   .carousel-item :global(.card) {
@@ -337,6 +344,9 @@
   .edit-container :global(.card) {
     width: 100%;
     height: 100%;
+    background: #12121a !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   /* Navigation Arrows */

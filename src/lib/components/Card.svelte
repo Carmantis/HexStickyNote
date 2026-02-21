@@ -155,7 +155,7 @@
 
 <style>
   .card {
-    background: rgb(18, 18, 26);
+    background: #12121a !important;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--border-radius);
     padding: 1rem;
@@ -167,10 +167,14 @@
     min-height: 120px;
     display: flex;
     flex-direction: column;
+    /* Force solid layer rendering and prevent blending */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    isolation: isolate;
   }
 
   .card:hover:not(.editing) {
-    transform: translateY(-2px);
+    transform: translateY(-2px) translateZ(0);
     box-shadow: var(--shadow-md);
     border-color: var(--accent-primary);
   }
@@ -180,6 +184,7 @@
     box-shadow: var(--shadow-lg), 0 0 20px var(--accent-glow);
     border-color: var(--accent-primary);
     overflow: hidden;
+    background: #12121a !important;
   }
 
   .card-content {
@@ -188,7 +193,9 @@
     overflow-x: hidden;
     user-select: text;
     padding-right: 0.5rem; /* Space for scrollbar */
-    background: rgb(18, 18, 26);
+    background: #12121a !important;
+    /* Force its own opaque rendering layer to stop "hole-punching" */
+    transform: translateZ(0);
   }
 
   .card-editor {
@@ -199,13 +206,17 @@
     overflow: hidden;
     height: 100%;
     min-height: 0; /* Important for flex child scrolling */
-    background: rgb(18, 18, 26);
+    background: #12121a !important;
+    transform: translateZ(0);
   }
 
   .card-footer {
     margin-top: auto;
     padding-top: 0.75rem;
     border-top: 1px solid var(--border-color);
+    background: #12121a !important;
+    position: relative;
+    z-index: 1;
   }
 
   .card-time {

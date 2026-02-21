@@ -185,7 +185,7 @@
     min-height: 0; /* Allow shrinking */
     border-radius: 8px;
     overflow-y: auto; /* Scroll here */
-    background: var(--bg-secondary);
+    background: #1a1a24;
     border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
