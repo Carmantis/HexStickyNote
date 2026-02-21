@@ -9,7 +9,7 @@ A modern desktop note-taking application with AI integration and a unique 3D car
 - **3D Carousel Interface**: Navigate your notes in an intuitive 3D carousel with smooth animations.
 - **AI-Powered Writing**: Enhance your notes with AI assistance from multiple providers:
   - **Local LLM**: Run models like **Llama-Poro-2 8B Instruct** (Finnish) or **Meta-Llama-3.1 8B Instruct** (English) completely offline.
-  - **Cloud Providers**: OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet), and Google Gemini.
+  - **Cloud Providers**: OpenAI (o3, GPT-5.2 Codex, GPT-4.1), Anthropic (Claude Opus/Sonnet 4.6), and Google (Gemini 3.1 Pro, Gemini 3 Deep Think).
 - **GPU Acceleration**: Built-in support for **Vulkan** (Universal), **CUDA** (NVIDIA), and **ROCm** (AMD) to speed up local AI.
 - **Finnish Language Support**: Optimized prompts and UI for Finnish users.
 - **Markdown Editor**: Full-featured CodeMirror 6 editor with syntax highlighting and live preview.

@@ -90,21 +90,21 @@ impl Default for AppSettings {
         providers.insert(
             "openai".to_string(),
             ProviderConfig {
-                model: "gpt-4o".to_string(),
+                model: "gpt-5.2-codex".to_string(),
                 custom_model: None,
             },
         );
         providers.insert(
             "anthropic".to_string(),
             ProviderConfig {
-                model: "claude-3-5-sonnet-20241022".to_string(),
+                model: "claude-sonnet-4-6".to_string(),
                 custom_model: None,
             },
         );
         providers.insert(
             "google".to_string(),
             ProviderConfig {
-                model: "gemini-2.5-flash".to_string(),
+                model: "gemini-3.1-pro-latest".to_string(),
                 custom_model: None,
             },
         );
@@ -220,9 +220,9 @@ impl SettingsManager {
         } else {
             // Fallback to hardcoded defaults if not in settings
             match provider {
-                AiProvider::OpenAI => "gpt-4o".to_string(),
-                AiProvider::Anthropic => "claude-3-5-sonnet-20241022".to_string(),
-                AiProvider::Google => "gemini-2.5-flash".to_string(),
+                AiProvider::OpenAI => "gpt-5.2-codex".to_string(),
+                AiProvider::Anthropic => "claude-sonnet-4-6".to_string(),
+                AiProvider::Google => "gemini-3.1-pro-latest".to_string(),
                 _ => "unknown".to_string(),
             }
         }

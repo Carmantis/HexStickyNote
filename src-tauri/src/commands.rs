@@ -254,21 +254,23 @@ pub async fn set_gpu_type(
 pub async fn get_recommended_models() -> Result<serde_json::Value, String> {
     let models = serde_json::json!({
         "openai": [
-            { "id": "gpt-4o", "name": "GPT-4o (Recommended)" },
-            { "id": "gpt-4o-mini", "name": "GPT-4o Mini (Faster, cheaper)" },
-            { "id": "gpt-4-turbo", "name": "GPT-4 Turbo" },
-            { "id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo (Legacy)" },
+            { "id": "gpt-5.2-codex", "name": "GPT-5.2 Codex (Recommended for coding)" },
+            { "id": "o3", "name": "o3 (Deep reasoning)" },
+            { "id": "o4-mini", "name": "o4-mini (Fast reasoning)" },
+            { "id": "gpt-4.1", "name": "GPT-4.1 (1M context)" },
+            { "id": "gpt-4.1-mini", "name": "GPT-4.1 Mini" },
+            { "id": "gpt-4o", "name": "GPT-4o (Multimodal)" },
         ],
         "anthropic": [
-            { "id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet (Recommended)" },
-            { "id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku (Faster)" },
-            { "id": "claude-3-opus-20240229", "name": "Claude 3 Opus (Most capable)" },
+            { "id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Recommended)" },
+            { "id": "claude-opus-4-6", "name": "Claude Opus 4.6 (Most capable)" },
+            { "id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5 (Fastest)" },
         ],
         "google": [
-            { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Recommended)" },
-            { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Most capable)" },
-            { "id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro (Legacy)" },
-            { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash (Legacy)" },
+            { "id": "gemini-3.1-pro-latest", "name": "Gemini 3.1 Pro (Recommended)" },
+            { "id": "gemini-3.0-deep-think", "name": "Gemini 3 Deep Think (Research)" },
+            { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Large context)" },
+            { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Fast)" },
         ],
     });
     Ok(models)
