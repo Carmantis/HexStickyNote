@@ -388,6 +388,21 @@
               </svg>
               <span>Configured and ready</span>
             </div>
+
+            <button
+              class="provider-select-button"
+              class:active={activeProviderId === selectedCloudProvider}
+              on:click={() => settingsStore.setActiveProvider(selectedCloudProvider)}
+            >
+              <span class="provider-radio">
+                {#if activeProviderId === selectedCloudProvider}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="12" r="8"/>
+                  </svg>
+                {/if}
+              </span>
+              <span>Use this provider</span>
+            </button>
           {/if}
         </div>
       </section>
@@ -977,5 +992,50 @@
     background: rgba(34, 197, 94, 0.1);
     border: 1px solid rgba(34, 197, 94, 0.2);
     color: #22c55e;
+  }
+
+  .provider-select-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+    cursor: pointer;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .provider-select-button:hover {
+    background: var(--bg-hover);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: var(--text-primary);
+  }
+
+  .provider-select-button.active {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+  }
+
+  .provider-select-button .provider-radio {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-primary);
+    transition: border-color var(--transition-fast);
+  }
+
+  .provider-select-button.active .provider-radio {
+    border-color: var(--accent-primary);
   }
 </style>

@@ -8,7 +8,7 @@ A modern desktop note-taking application with AI integration and a unique 3D car
 
 - **3D Carousel Interface**: Navigate your notes in an intuitive 3D carousel with smooth animations.
 - **AI-Powered Writing**: Enhance your notes with AI assistance from multiple providers:
-  - **Local LLM**: Run models like **Llama-Poro-2 8B Instruct** or **FIN Chat Summarization** completely offline.
+  - **Local LLM**: Run models like **Llama-Poro-2 8B Instruct** (Finnish) or **Meta-Llama-3.1 8B Instruct** (English) completely offline.
   - **Cloud Providers**: OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet), and Google Gemini.
 - **GPU Acceleration**: Built-in support for **Vulkan** (Universal), **CUDA** (NVIDIA), and **ROCm** (AMD) to speed up local AI.
 - **Finnish Language Support**: Optimized prompts and UI for Finnish users.
@@ -51,7 +51,7 @@ HexStickyNote supports running tekoäly (AI) locally on your computer.
 
 ### Recommended Models
 - **Poro 2 8B Instruct**: Excellent for general writing and help in Finnish.
-- **FIN Chat Summarization**: Lightweight model for summarizing Finnish text.
+- **Llama 3.1 8B Instruct**: Powerful general-purpose model for English content.
 
 ### GPU Acceleration
 To use your graphics card for faster AI:
@@ -73,6 +73,8 @@ HexStickyNote includes an MCP server. You can connect it to Claude Desktop to le
 4. Restart Claude Desktop.
 
 Claude can now use tools like `create_note`, `list_notes`, and `read_note` to help you manage your workspace.
+
+**Tip**: When Claude creates or modifies notes, click the refresh button (🔄) in HexStickyNote to see the changes immediately.
 
 
 ## Build & Release
