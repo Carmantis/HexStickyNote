@@ -16,7 +16,7 @@
   const dispatch = createEventDispatcher<{ close: void }>();
 
   // Local model provider IDs (no API key needed)
-  const LOCAL_MODELS = ['poro2_8b', 'finchat_summary'];
+  const LOCAL_MODELS = ['poro2_8b', 'llama3_8b'];
 
   // GPU type state
   let gpuType = 'cpu';

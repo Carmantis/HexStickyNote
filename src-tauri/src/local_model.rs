@@ -92,9 +92,9 @@ fn get_model_info(
             "https://huggingface.co/mradermacher/Llama-Poro-2-8B-Instruct-GGUF/resolve/main/Llama-Poro-2-8B-Instruct.Q4_K_M.gguf".to_string(),
             "Llama-Poro-2-8B-Instruct.Q4_K_M.gguf".to_string()
         )),
-        AiProvider::FinChatSummary => Ok((
-            "https://huggingface.co/ArttuPakarinen/FIN-ai-chat-summarization.Q4_K_M.gguf/resolve/main/FIN-ai-chat-summarization.Q4_K_M.gguf".to_string(),
-            "FIN-ai-chat-summarization.Q4_K_M.gguf".to_string()
+        AiProvider::Llama3_8B => Ok((
+            "https://huggingface.co/mradermacher/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf".to_string(),
+            "Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf".to_string()
         )),
         _ => Err(LocalModelError::InvalidProvider(format!("{:?} is not a local model provider", provider)))
     }

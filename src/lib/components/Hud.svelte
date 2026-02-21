@@ -86,7 +86,7 @@
   }
 
   async function handleRefreshCards() {
-    await cardStore.loadCards();
+    await cardStore.reloadCards();
   }
 </script>
 

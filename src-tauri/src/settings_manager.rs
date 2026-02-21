@@ -69,7 +69,7 @@ pub struct AppSettings {
     /// Cloud provider configurations (openai, anthropic, google)
     #[serde(default)]
     pub providers: HashMap<String, ProviderConfig>,
-    /// Local model configurations (poro2_8b, finchat_summary)
+    /// Local model configurations (poro2_8b, llama3_8b)
     #[serde(default)]
     pub local_models: HashMap<String, LocalModelConfig>,
     /// GPU acceleration type (cpu, vulkan, cuda, rocm)
@@ -119,10 +119,10 @@ impl Default for AppSettings {
             },
         );
         local_models.insert(
-            "finchat_summary".to_string(),
+            "llama3_8b".to_string(),
             LocalModelConfig {
-                repo: "ArttuPakarinen/FIN-ai-chat-summarization.Q4_K_M.gguf".to_string(),
-                filename: "FIN-ai-chat-summarization.Q4_K_M.gguf".to_string(),
+                repo: "mradermacher/Meta-Llama-3.1-8B-Instruct-GGUF".to_string(),
+                filename: "Meta-Llama-3.1-8B-Instruct.Q4_K_M.gguf".to_string(),
                 custom_url: None,
             },
         );

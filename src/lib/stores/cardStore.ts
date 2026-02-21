@@ -61,16 +61,36 @@ function createCardStore() {
     }
   }
 
+  /**
+   * Reload all cards from the file system
+   * Useful when cards are modified externally (e.g., by Claude Desktop)
+   */
+  async function reloadCards() {
+    update(s => ({ ...s, isLoading: true, error: null }));
+
+    try {
+      const cards = await invoke<Card[]>('reload_cards');
+      update(s => ({ ...s, cards, isLoading: false }));
+    } catch (error) {
+      update(s => ({
+        ...s,
+        isLoading: false,
+        error: error instanceof Error ? error.message : String(error)
+      }));
+    }
+  }
+
   // Listen for backend refresh requests (e.g. after AI tool execution)
   if (typeof window !== 'undefined') {
     listen('refresh-required', () => {
-      loadCards();
+      reloadCards();
     });
   }
 
   return {
     subscribe,
     loadCards,
+    reloadCards,
 
     /**
      * Create a new card

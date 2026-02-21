@@ -46,6 +46,7 @@ fn main() {
             get_cards,
             save_card,
             delete_card,
+            reload_cards,
             // Settings
             get_all_settings,
             set_provider_model,

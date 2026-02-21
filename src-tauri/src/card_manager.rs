@@ -383,3 +383,16 @@ pub fn delete_card(id: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Reload all cards from the file system
+/// This is useful when cards are modified externally (e.g., by MCP server)
+pub fn reload_all_cards() -> Result<Vec<Card>, String> {
+    let cards = load_cards_from_files()?;
+
+    // Update the global CARDS state
+    let mut cards_lock = CARDS.lock().unwrap();
+    *cards_lock = cards.clone();
+
+    log::info!("Reloaded {} cards from file system", cards.len());
+    Ok(cards)
+}

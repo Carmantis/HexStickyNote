@@ -25,7 +25,7 @@ pub enum AiProvider {
     Anthropic,
     Google,
     Poro2_8B,
-    FinChatSummary,
+    Llama3_8B,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -64,7 +64,7 @@ impl AiProvider {
             AiProvider::Anthropic => "anthropic",
             AiProvider::Google => "google",
             AiProvider::Poro2_8B => "poro2_8b",
-            AiProvider::FinChatSummary => "finchat_summary",
+            AiProvider::Llama3_8B => "llama3_8b",
         }
     }
 
@@ -74,7 +74,7 @@ impl AiProvider {
             AiProvider::Anthropic => "Anthropic",
             AiProvider::Google => "Google",
             AiProvider::Poro2_8B => "Poro 2 8B Instruct",
-            AiProvider::FinChatSummary => "FIN Chat Summarization",
+            AiProvider::Llama3_8B => "Llama 3.1 8B Instruct",
         }
     }
 
@@ -84,7 +84,7 @@ impl AiProvider {
             "anthropic" => Ok(AiProvider::Anthropic),
             "google" => Ok(AiProvider::Google),
             "poro2_8b" => Ok(AiProvider::Poro2_8B),
-            "finchat_summary" => Ok(AiProvider::FinChatSummary),
+            "llama3_8b" => Ok(AiProvider::Llama3_8B),
             _ => Err(KeyringError::InvalidProvider(s.to_string())),
         }
     }
@@ -95,7 +95,7 @@ impl AiProvider {
             AiProvider::Anthropic,
             AiProvider::Google,
             AiProvider::Poro2_8B,
-            AiProvider::FinChatSummary,
+            AiProvider::Llama3_8B,
         ]
     }
 
@@ -103,7 +103,7 @@ impl AiProvider {
     pub fn requires_api_key(&self) -> bool {
         match self {
             AiProvider::OpenAI | AiProvider::Anthropic | AiProvider::Google => true,
-            AiProvider::Poro2_8B | AiProvider::FinChatSummary => false,
+            AiProvider::Poro2_8B | AiProvider::Llama3_8B => false,
         }
     }
 }

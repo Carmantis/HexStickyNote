@@ -30,31 +30,11 @@
   let downloadProgress: DownloadProgress | null = null;
   let error: string | null = null;
 
-  let customUrl = '';
-  let repoName = '';
-  let filename = '';
-  let showAdvanced = false;
-
   let unlistenProgress: (() => void) | null = null;
   let unlistenComplete: (() => void) | null = null;
 
   onMount(async () => {
     await loadModelStatus();
-
-    // Load custom configuration if available
-    try {
-      const settings = await invoke<{
-        local_models: Record<string, { custom_url?: string; repo?: string; filename?: string }>
-      }>('get_all_settings');
-      const localConfig = settings.local_models?.[provider.id];
-      if (localConfig) {
-        customUrl = localConfig.custom_url || '';
-        repoName = localConfig.repo || '';
-        filename = localConfig.filename || '';
-      }
-    } catch (e) {
-      console.error('Failed to load local model config:', e);
-    }
 
     // Listen for download progress
     unlistenProgress = await listen<DownloadProgress>('local-model-download-progress', (event) => {
@@ -112,22 +92,6 @@
       await loadModelStatus();
     } catch (e) {
       console.error('Failed to delete model:', e);
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  async function handleSaveConfig() {
-    try {
-      await invoke('set_local_model_config', {
-        provider: provider.id,
-        repo: repoName || '',
-        filename: filename || '',
-        custom_url: customUrl || null
-      });
-      // Show success or reload status
-      await loadModelStatus();
-    } catch (e) {
-      console.error('Failed to save config:', e);
       error = e instanceof Error ? e.message : String(e);
     }
   }
@@ -198,62 +162,7 @@
     </div>
   {:else}
     <div class="model-not-downloaded">
-      <p>Model not downloaded. Configure and download to use offline.</p>
-
-      <button
-        class="toggle-advanced"
-        on:click={() => showAdvanced = !showAdvanced}
-      >
-        {showAdvanced ? '▼' : '▶'} Advanced Configuration
-      </button>
-
-      {#if showAdvanced}
-        <div class="advanced-config">
-          <div class="config-section">
-            <label class="config-label">
-              Custom Download URL (optional)
-              <input
-                type="text"
-                bind:value={customUrl}
-                placeholder="https://huggingface.co/user/repo/resolve/main/model.gguf"
-                class="config-input"
-              />
-            </label>
-            <p class="config-hint">Direct link to .gguf file. Overrides repo/filename if set.</p>
-          </div>
-
-          <div class="or-divider">
-            <span>OR use HuggingFace repo</span>
-          </div>
-
-          <div class="config-section">
-            <label class="config-label">
-              Repository
-              <input
-                type="text"
-                bind:value={repoName}
-                placeholder="mradermacher/Llama-Poro-2-8B-Instruct-GGUF"
-                class="config-input"
-              />
-            </label>
-
-            <label class="config-label">
-              Filename
-              <input
-                type="text"
-                bind:value={filename}
-                placeholder="Llama-Poro-2-8B-Instruct.Q4_K_M.gguf"
-                class="config-input"
-              />
-            </label>
-            <p class="config-hint">Leave empty to use defaults</p>
-          </div>
-
-          <button class="save-config-button" on:click={handleSaveConfig}>
-            Save Configuration
-          </button>
-        </div>
-      {/if}
+      <p>Model not downloaded. Download to use offline.</p>
 
       <button class="download-button" on:click={handleDownload}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -383,111 +292,5 @@
     font-size: 0.75rem;
     color: var(--text-muted);
     text-align: center;
-  }
-
-  .toggle-advanced {
-    padding: 0.5rem;
-    background: transparent;
-    color: var(--text-secondary);
-    border: none;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: color var(--transition-fast);
-    text-align: left;
-    width: 100%;
-  }
-
-  .toggle-advanced:hover {
-    color: var(--text-primary);
-  }
-
-  .advanced-config {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 6px;
-  }
-
-  .config-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .config-label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-  }
-
-  .config-input {
-    padding: 0.5rem 0.75rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-family: 'Courier New', monospace;
-  }
-
-  .config-input:focus {
-    outline: none;
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-  }
-
-  .config-hint {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin: 0;
-    font-style: italic;
-  }
-
-  .or-divider {
-    text-align: center;
-    position: relative;
-    margin: 0.5rem 0;
-  }
-
-  .or-divider span {
-    display: inline-block;
-    padding: 0 0.5rem;
-    background: var(--bg-card);
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .or-divider::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.1);
-    z-index: -1;
-  }
-
-  .save-config-button {
-    padding: 0.5rem 1rem;
-    background: rgba(99, 102, 241, 0.2);
-    color: var(--accent-primary);
-    border: 1px solid var(--accent-primary);
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    transition: background var(--transition-fast);
-  }
-
-  .save-config-button:hover {
-    background: rgba(99, 102, 241, 0.3);
   }
 </style>

@@ -72,19 +72,20 @@ fn format_prompt(provider: AiProvider, prompt: &str, context: &str) -> String {
                 context, prompt
             )
         }
-        AiProvider::FinChatSummary => {
-            // Simpler format for Finnish summarization model to avoid echoing
-            if context.is_empty() {
-                format!(
-                    "Kysymys: {}\n\nVastaus: ",
-                    prompt
-                )
+        AiProvider::Llama3_8B => {
+            // Llama 3.1 Instruct format - English version
+            // System: You are a note editor
+            // User: Current content + request
+            let user_message = if context.is_empty() {
+                prompt.to_string()
             } else {
-                format!(
-                    "Konteksti: {}\n\nKysymys: {}\n\nVastaus: ",
-                    context, prompt
-                )
-            }
+                format!("Current content:\n{}\n\nRequest: {}", context, prompt)
+            };
+
+            format!(
+                "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful note editor. Update the note content according to the user's request. Use Markdown formatting. Output only the updated content without explanations.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                user_message
+            )
         }
         _ => {
             // Fallback format

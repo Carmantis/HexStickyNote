@@ -156,6 +156,13 @@ pub async fn delete_card(id: String) -> Result<(), String> {
     card_manager::delete_card(&id)
 }
 
+/// Reload all cards from file system
+/// Useful when cards are modified externally (e.g., by Claude Desktop MCP)
+#[tauri::command]
+pub async fn reload_cards() -> Result<Vec<Card>, String> {
+    card_manager::reload_all_cards()
+}
+
 // ============================================================================
 // Window State Commands
 // ============================================================================
