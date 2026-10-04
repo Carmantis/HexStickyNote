@@ -125,6 +125,21 @@ const TOOLS: &[ToolSpec] = &[
         },
     },
     ToolSpec {
+        name: "update_note",
+        kind: ToolKind::Write,
+        description: "Replace the content of an existing sticky note. Give the complete new Markdown content, not just the changed part.",
+        parameters: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Note id" },
+                    "content": { "type": "string", "description": "The full new content" }
+                },
+                "required": ["id", "content"]
+            })
+        },
+    },
+    ToolSpec {
         name: "list_time_entries",
         kind: ToolKind::Read,
         description: "List tracked time entries (HexTime) between two dates, with project, description and duration.",
@@ -219,6 +234,12 @@ struct ReadNoteArgs {
 
 #[derive(Deserialize)]
 struct CreateNoteArgs {
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct UpdateNoteArgs {
+    id: String,
     content: String,
 }
 
@@ -328,6 +349,14 @@ pub fn describe(name: &str, arguments: &Value) -> Result<String, ToolError> {
             let a = args::<CreateNoteArgs>(arguments)?;
             Ok(format!("Create note “{}”", card_manager::extract_title_from_content(&a.content)))
         }
+        "update_note" => {
+            let a = args::<UpdateNoteArgs>(arguments)?;
+            let card = find_note(&a.id)?;
+            if a.content.trim().is_empty() {
+                return Err(ToolError::InvalidArguments("content is empty".to_string()));
+            }
+            Ok(format!("Update note “{}”", card_manager::extract_title_from_content(&card.content)))
+        }
         "start_timer" => {
             let a = args::<StartTimerArgs>(arguments)?;
             let what = a.description.filter(|d| !d.trim().is_empty()).unwrap_or_else(|| "no description".to_string());
@@ -359,6 +388,14 @@ fn event_json(e: &Event) -> Value {
         "description": e.description,
         "recurring": e.recurrence.is_some(),
     })
+}
+
+fn find_note(id: &str) -> Result<card_manager::Card, ToolError> {
+    card_manager::get_all_cards()
+        .map_err(ToolError::Failed)?
+        .into_iter()
+        .find(|c| c.id == id.trim())
+        .ok_or_else(|| ToolError::InvalidArguments(format!("no note with id {}", id)))
 }
 
 fn calendar<'a>(ctx: &ToolContext<'a>) -> Result<&'a DbPool, ToolError> {
@@ -466,12 +503,18 @@ pub async fn execute(ctx: &ToolContext<'_>, name: &str, arguments: &Value) -> Re
         }
         "read_note" => {
             let a: ReadNoteArgs = args(arguments)?;
-            let cards = card_manager::get_all_cards().map_err(ToolError::Failed)?;
-            let card = cards
-                .iter()
-                .find(|c| c.id == a.id.trim())
-                .ok_or_else(|| ToolError::InvalidArguments(format!("no note with id {}", a.id)))?;
+            let card = find_note(&a.id)?;
             Ok(json!({ "id": card.id, "content": card.content }))
+        }
+        "update_note" => {
+            let a: UpdateNoteArgs = args(arguments)?;
+            if a.content.trim().is_empty() {
+                return Err(ToolError::InvalidArguments("content is empty".to_string()));
+            }
+            let card = card_manager::update_card(&find_note(&a.id)?.id, Some(a.content)).map_err(ToolError::Failed)?;
+            Ok(json!({
+                "updated": { "id": card.id, "title": card_manager::extract_title_from_content(&card.content) }
+            }))
         }
         "create_note" => {
             let a: CreateNoteArgs = args(arguments)?;
@@ -563,6 +606,7 @@ mod tests {
         assert_eq!(kind("list_events").unwrap(), ToolKind::Read);
         assert_eq!(kind("create_event").unwrap(), ToolKind::Write);
         assert_eq!(kind("start_timer").unwrap(), ToolKind::Write);
+        assert_eq!(kind("update_note").unwrap(), ToolKind::Write);
         assert!(matches!(kind("delete_everything"), Err(ToolError::UnknownTool(_))));
     }
 

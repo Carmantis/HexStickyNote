@@ -12,6 +12,7 @@
   import Settings from "./Settings.svelte";
   import CalendarView from "$lib/calendar/CalendarView.svelte";
   import HexTimeView from "./HexTimeView.svelte";
+  import AssistantPanel from "./AssistantPanel.svelte";
 
   export let isOpen: boolean = false;
 
@@ -21,6 +22,7 @@
 
   let view: View = loadView();
   let showSettings = false;
+  let showAssistant = false;
   let isGhostMode = false;
   $: editing = $editingCard;
 
@@ -240,6 +242,18 @@
 
         <button
           class="action-button"
+          class:active={showAssistant}
+          on:click|stopPropagation={() => (showAssistant = !showAssistant)}
+          title="Assistant"
+          aria-pressed={showAssistant}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+
+        <button
+          class="action-button"
           on:click|stopPropagation={handleSettingsClick}
           title="Settings"
         >
@@ -284,6 +298,12 @@
         <CardCarousel />
       {/if}
     </main>
+
+    {#if showAssistant}
+      <div class="assistant-dock">
+        <AssistantPanel {view} on:close={() => (showAssistant = false)} />
+      </div>
+    {/if}
 
     {#if showSettings}
       <Settings on:close={handleSettingsClose} />
@@ -438,6 +458,21 @@
   .action-button:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+  }
+
+  .action-button.active {
+    background: var(--accent-primary);
+    color: white;
+  }
+
+  .assistant-dock {
+    position: absolute;
+    top: calc(1.5rem + 60px + 1rem);
+    right: 1.5rem;
+    bottom: 1.5rem;
+    width: min(380px, 45vw);
+    z-index: 50;
+    pointer-events: auto;
   }
 
   .delete-button:hover {

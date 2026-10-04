@@ -63,6 +63,9 @@
 
   // Handle click outside -> exit edit mode
   function handleClickOutside(event: MouseEvent) {
+    // Chatting with the assistant about this note keeps it open
+    if ((event.target as Element | null)?.closest?.('.assistant-panel')) return;
+
     if ($mode === 'edit' && cardElement && !cardElement.contains(event.target as Node)) {
       cardStore.exitEditMode(card.id);
     }

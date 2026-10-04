@@ -89,6 +89,10 @@
   function handleKeydown(event: KeyboardEvent) {
     if (editing) return; // Don't navigate while editing
 
+    // Arrow keys in a text field (e.g. the assistant chat) move the cursor
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+
     if (event.key === "ArrowLeft") {
       rotateCarousel("prev");
     } else if (event.key === "ArrowRight") {

@@ -70,9 +70,10 @@ function createCardStore() {
   /**
    * Reload all cards from the file system
    * Useful when cards are modified externally (e.g., by Claude Desktop)
+   * @param quiet Keep the carousel (and an open editor) on screen while loading
    */
-  async function reloadCards() {
-    update(s => ({ ...s, isLoading: true, error: null }));
+  async function reloadCards(quiet = false) {
+    update(s => ({ ...s, isLoading: !quiet, error: null }));
 
     try {
       const cards = await invoke<Card[]>('reload_cards');
@@ -93,10 +94,25 @@ function createCardStore() {
     });
   }
 
+  /**
+   * Write the card being edited to disk (e.g. before the assistant reads or changes it)
+   */
+  async function saveEditingCard() {
+    let editing: Card | undefined;
+    update(s => {
+      editing = s.cards.find(c => c.id === s.editingCardId);
+      return s;
+    });
+    if (editing) {
+      await invoke('save_card', { card: editing });
+    }
+  }
+
   return {
     subscribe,
     loadCards,
     reloadCards,
+    saveEditingCard,
 
     /**
      * Create a new card

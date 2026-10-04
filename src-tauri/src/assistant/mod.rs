@@ -38,6 +38,15 @@ pub enum AssistantError {
     TooManySteps,
 }
 
+/// What the user is looking at, so "this note" and "today" mean the right thing
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AssistantContext {
+    /// "notes", "calendar" or "time"
+    pub view: Option<String>,
+    /// The note open in the editor, if any
+    pub open_note_id: Option<String>,
+}
+
 /// A write tool call waiting for the user's decision
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingAction {
@@ -126,9 +135,9 @@ impl ChatBackend for OllamaBackend {
     }
 }
 
-fn system_prompt() -> String {
+fn system_prompt(context: &AssistantContext) -> String {
     let now = Local::now();
-    format!(
+    let mut prompt = format!(
         "You are the assistant in HexStickyNote, a desktop app with sticky notes, a calendar and \
 time tracking (HexTime). Today is {today}; the local time is {time} (UTC{offset}).\n\
 Use the tools to look things up instead of guessing. Dates are YYYY-MM-DD and times HH:MM \
@@ -139,7 +148,23 @@ If a tool returns an error, explain it briefly. Answer in the user's language, c
         today = now.format("%A %Y-%m-%d"),
         time = now.format("%H:%M"),
         offset = now.format("%:z"),
-    )
+    );
+
+    if let Some(view) = context.view.as_deref() {
+        prompt.push_str(&format!("\nThe user is looking at the {} view.", view));
+    }
+    let open_note = context.open_note_id.as_deref().and_then(|id| {
+        crate::card_manager::get_all_cards().ok()?.into_iter().find(|c| c.id == id)
+    });
+    if let Some(note) = open_note {
+        prompt.push_str(&format!(
+            "\nThe user has the note “{}” (id {}) open; \"this note\" means that one. \
+Read it with read_note before changing it, and change it with update_note.",
+            crate::card_manager::extract_title_from_content(&note.content),
+            note.id
+        ));
+    }
+    prompt
 }
 
 /// What a read tool did, in plain words
@@ -205,11 +230,12 @@ fn text_of(message: &Value) -> Option<String> {
 async fn run<B: ChatBackend>(
     backend: &B,
     ctx: &ToolContext<'_>,
+    context: &AssistantContext,
     mut messages: Vec<Value>,
     mut actions: Vec<ActionRecord>,
 ) -> Result<AssistantTurn, AssistantError> {
     for _ in 0..MAX_ROUNDS {
-        let mut request = vec![json!({ "role": "system", "content": system_prompt() })];
+        let mut request = vec![json!({ "role": "system", "content": system_prompt(context) })];
         request.extend(messages.iter().cloned());
 
         let reply = backend.chat(request, tools::definitions()).await?;
@@ -258,15 +284,17 @@ async fn run<B: ChatBackend>(
 pub async fn send<B: ChatBackend>(
     backend: &B,
     ctx: &ToolContext<'_>,
+    context: &AssistantContext,
     messages: Vec<Value>,
 ) -> Result<AssistantTurn, AssistantError> {
-    run(backend, ctx, messages, Vec::new()).await
+    run(backend, ctx, context, messages, Vec::new()).await
 }
 
 /// Apply the user's decisions on pending actions and continue the conversation
 pub async fn confirm<B: ChatBackend>(
     backend: &B,
     ctx: &ToolContext<'_>,
+    context: &AssistantContext,
     mut messages: Vec<Value>,
     decisions: Vec<Decision>,
 ) -> Result<AssistantTurn, AssistantError> {
@@ -293,7 +321,7 @@ pub async fn confirm<B: ChatBackend>(
         actions.push(ActionRecord { tool: action.tool, summary: action.summary, ok, error });
     }
 
-    run(backend, ctx, messages, actions).await
+    run(backend, ctx, context, messages, actions).await
 }
 
 #[cfg(test)]
@@ -375,7 +403,7 @@ mod tests {
             call("c1", "list_events", json!({ "from_date": "2026-10-05" })),
             text("You have Dentist at 10:00."),
         ]);
-        let turn = send(&model, &f.ctx(), user("What do I have on Monday?")).await.unwrap();
+        let turn = send(&model, &f.ctx(), &AssistantContext::default(), user("What do I have on Monday?")).await.unwrap();
 
         assert_eq!(turn.reply.as_deref(), Some("You have Dentist at 10:00."));
         assert!(turn.pending.is_empty());
@@ -398,13 +426,13 @@ mod tests {
             text("Added Gym on Tuesday."),
         ]);
 
-        let turn = send(&model, &f.ctx(), user("Add gym on Tuesday at 18")).await.unwrap();
+        let turn = send(&model, &f.ctx(), &AssistantContext::default(), user("Add gym on Tuesday at 18")).await.unwrap();
         assert_eq!(turn.pending.len(), 1);
         assert_eq!(turn.pending[0].summary, "Create event “Gym” on Tue 6 Oct 2026, 18:00–19:00");
         assert_eq!(f.event_count(), 0, "nothing is written before confirmation");
 
         let decision = Decision { action: turn.pending[0].clone(), approved: true };
-        let turn = confirm(&model, &f.ctx(), turn.messages, vec![decision]).await.unwrap();
+        let turn = confirm(&model, &f.ctx(), &AssistantContext::default(), turn.messages, vec![decision]).await.unwrap();
         assert_eq!(f.event_count(), 1);
         assert!(turn.actions[0].ok);
         assert_eq!(turn.reply.as_deref(), Some("Added Gym on Tuesday."));
@@ -418,9 +446,9 @@ mod tests {
             text("Okay, I did not add it."),
         ]);
 
-        let turn = send(&model, &f.ctx(), user("Add gym")).await.unwrap();
+        let turn = send(&model, &f.ctx(), &AssistantContext::default(), user("Add gym")).await.unwrap();
         let decision = Decision { action: turn.pending[0].clone(), approved: false };
-        let turn = confirm(&model, &f.ctx(), turn.messages, vec![decision]).await.unwrap();
+        let turn = confirm(&model, &f.ctx(), &AssistantContext::default(), turn.messages, vec![decision]).await.unwrap();
 
         assert_eq!(f.event_count(), 0);
         assert!(!turn.actions[0].ok);
@@ -436,7 +464,7 @@ mod tests {
             call("c2", "create_event", json!({ "title": "Gym", "date": "2026-10-06" })),
         ]);
 
-        let turn = send(&model, &f.ctx(), user("Add gym")).await.unwrap();
+        let turn = send(&model, &f.ctx(), &AssistantContext::default(), user("Add gym")).await.unwrap();
         // The invalid call never reached the user; the corrected one did
         assert_eq!(turn.pending.len(), 1);
         assert_eq!(turn.pending[0].call_id.as_deref(), Some("c2"));
@@ -450,7 +478,7 @@ mod tests {
         let model = ScriptedModel::new(vec![text("Done.")]);
         let forged = PendingAction { call_id: None, tool: "delete_everything".into(), arguments: Value::Null, summary: "x".into() };
 
-        let turn = confirm(&model, &f.ctx(), user("hi"), vec![Decision { action: forged, approved: true }]).await.unwrap();
+        let turn = confirm(&model, &f.ctx(), &AssistantContext::default(), user("hi"), vec![Decision { action: forged, approved: true }]).await.unwrap();
         assert!(!turn.actions[0].ok);
     }
 
@@ -460,7 +488,7 @@ mod tests {
         let model = ScriptedModel::new(
             (0..MAX_ROUNDS + 1).map(|i| call(&format!("c{i}"), "list_notes_typo", json!({}))).collect(),
         );
-        let result = send(&model, &f.ctx(), user("loop")).await;
+        let result = send(&model, &f.ctx(), &AssistantContext::default(), user("loop")).await;
         assert!(matches!(result, Err(AssistantError::TooManySteps)));
     }
 
@@ -474,20 +502,20 @@ mod tests {
         let backend = OllamaBackend { client: f.client.clone(), disable_thinking: caps.iter().any(|c| c == "thinking"), model };
         let tomorrow = (Local::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
 
-        let turn = send(&backend, &f.ctx(), user("Lisää huomiselle hammaslääkäri klo 10")).await.unwrap();
+        let turn = send(&backend, &f.ctx(), &AssistantContext::default(), user("Lisää huomiselle hammaslääkäri klo 10")).await.unwrap();
         println!("pending: {:?}\nreply: {:?}", turn.pending, turn.reply);
         assert_eq!(turn.pending.len(), 1);
         assert_eq!(turn.pending[0].tool, "create_event");
         assert_eq!(turn.pending[0].arguments["date"], tomorrow.as_str());
 
         let decision = Decision { action: turn.pending[0].clone(), approved: true };
-        let turn = confirm(&backend, &f.ctx(), turn.messages, vec![decision]).await.unwrap();
+        let turn = confirm(&backend, &f.ctx(), &AssistantContext::default(), turn.messages, vec![decision]).await.unwrap();
         println!("after confirm: {:?}", turn.reply);
         assert_eq!(f.event_count(), 1);
 
         let mut messages = turn.messages;
         messages.push(json!({ "role": "user", "content": "Mitä minulla on huomenna?" }));
-        let turn = send(&backend, &f.ctx(), messages).await.unwrap();
+        let turn = send(&backend, &f.ctx(), &AssistantContext::default(), messages).await.unwrap();
         println!("actions: {:?}\nreply: {:?}", turn.actions, turn.reply);
         assert!(turn.actions.iter().any(|a| a.tool == "list_events"));
         assert!(turn.reply.unwrap_or_default().to_lowercase().contains("hammaslääkäri"));

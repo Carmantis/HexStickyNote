@@ -3,7 +3,7 @@
 //! These commands are exposed to the frontend via the invoke() function.
 
 use crate::ai_manager::AiManager;
-use crate::assistant::{self, tools::ToolContext, AssistantTurn, Decision, OllamaBackend};
+use crate::assistant::{self, tools::ToolContext, AssistantContext, AssistantTurn, Decision, OllamaBackend};
 use crate::calendar::db::DbPool;
 use crate::card_manager::{self, Card};
 use crate::claude_mcp;
@@ -277,6 +277,7 @@ pub async fn remove_claude_mcp() -> Result<(), String> {
 #[tauri::command]
 pub async fn assistant_send(
     messages: Vec<serde_json::Value>,
+    context: Option<AssistantContext>,
     app: tauri::AppHandle,
     ai_manager: State<'_, AiManager>,
     settings: State<'_, std::sync::Arc<SettingsManager>>,
@@ -289,13 +290,14 @@ pub async fn assistant_send(
         hextime: &hextime,
         client: ai_manager.client(),
     };
-    assistant::send(&backend, &ctx, messages).await.map_err(|e| e.to_string())
+    assistant::send(&backend, &ctx, &context.unwrap_or_default(), messages).await.map_err(|e| e.to_string())
 }
 
 /// Apply the user's decisions on pending assistant actions and continue
 #[tauri::command]
 pub async fn assistant_confirm(
     messages: Vec<serde_json::Value>,
+    context: Option<AssistantContext>,
     decisions: Vec<Decision>,
     app: tauri::AppHandle,
     ai_manager: State<'_, AiManager>,
@@ -309,7 +311,7 @@ pub async fn assistant_confirm(
         hextime: &hextime,
         client: ai_manager.client(),
     };
-    assistant::confirm(&backend, &ctx, messages, decisions).await.map_err(|e| e.to_string())
+    assistant::confirm(&backend, &ctx, &context.unwrap_or_default(), messages, decisions).await.map_err(|e| e.to_string())
 }
 
 // ============================================================================

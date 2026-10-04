@@ -8,8 +8,11 @@
 
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { HEXTIME_CHANGED_EVENT } from "$lib/stores/assistantStore";
 
   let url: string | null = null;
+  /** Bumped to reload the page after the assistant changed the timer */
+  let reloadKey = 0;
   let error: string | null = null;
   let isStarting = false;
 
@@ -25,12 +28,19 @@
     }
   }
 
-  onMount(start);
+  onMount(() => {
+    start();
+    const reload = () => (reloadKey += 1);
+    window.addEventListener(HEXTIME_CHANGED_EVENT, reload);
+    return () => window.removeEventListener(HEXTIME_CHANGED_EVENT, reload);
+  });
 </script>
 
 <div class="hextime-view">
   {#if url}
-    <iframe src={url} title="HexTime"></iframe>
+    {#key reloadKey}
+      <iframe src={url} title="HexTime"></iframe>
+    {/key}
   {:else if error}
     <div class="status">
       <p class="status-title">HexTime could not be started</p>
