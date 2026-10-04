@@ -7,9 +7,11 @@
 use hex_sticky_note::ai_manager::AiManager;
 use hex_sticky_note::calendar;
 use hex_sticky_note::commands::*;
+use hex_sticky_note::hextime::HexTime;
 use hex_sticky_note::local_inference;
 use hex_sticky_note::settings_manager::SettingsManager;
 use std::sync::Arc;
+use tauri::Manager;
 
 fn main() {
     // Initialize logging
@@ -44,6 +46,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .manage(AiManager::new(settings.clone()))
         .manage(settings)
+        .manage(HexTime::default())
         .setup(move |app| {
             // A calendar failure must not take the notes down with it
             match calendar::init(app, calendar_settings) {
@@ -98,7 +101,14 @@ fn main() {
             calendar::commands::ai::invalidate_day_digest,
             calendar::commands::notifications::schedule_reminder,
             calendar::commands::notifications::dismiss_reminder,
+            // Time tracking (HexTime sidecar)
+            hextime_start,
         ])
-        .run(tauri::generate_context!())
-        .expect("Error while running HexStickyNote");
+        .build(tauri::generate_context!())
+        .expect("Error while building HexStickyNote")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<HexTime>().shutdown();
+            }
+        });
 }

@@ -8,6 +8,7 @@ pub mod calendar;
 pub mod card_manager;
 pub mod claude_mcp;
 pub mod commands;
+pub mod hextime;
 pub mod local_inference;
 pub mod local_model;
 pub mod ollama;

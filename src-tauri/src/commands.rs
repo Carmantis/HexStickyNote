@@ -5,6 +5,7 @@
 use crate::ai_manager::AiManager;
 use crate::card_manager::{self, Card};
 use crate::claude_mcp;
+use crate::hextime::HexTime;
 use crate::local_model::{self, LocalModelInfo};
 use crate::ollama;
 use crate::settings_manager::{GpuType, SettingsManager};
@@ -264,6 +265,22 @@ pub async fn setup_claude_mcp(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn remove_claude_mcp() -> Result<(), String> {
     claude_mcp::remove()
+}
+
+// ============================================================================
+// HexTime Commands
+// ============================================================================
+
+/// Start the HexTime sidecar if needed and return the URL of its UI
+#[tauri::command]
+pub async fn hextime_start(
+    hextime: State<'_, HexTime>,
+    ai_manager: State<'_, AiManager>,
+) -> Result<String, String> {
+    hextime
+        .start(ai_manager.client())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Open cards directory in file explorer
