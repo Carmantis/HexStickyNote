@@ -57,7 +57,7 @@ pub fn get_cards_directory() -> Result<PathBuf, String> {
 }
 
 /// Extract title from markdown content (first # heading or first meaningful line)
-fn extract_title_from_content(content: &str) -> String {
+pub fn extract_title_from_content(content: &str) -> String {
     // 1. Look for first h1 (# Title)
     for line in content.lines() {
         let trimmed = line.trim();

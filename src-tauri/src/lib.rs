@@ -4,6 +4,7 @@
 //! including note storage, the calendar, local AI inference and Claude Desktop MCP setup.
 
 pub mod ai_manager;
+pub mod assistant;
 pub mod calendar;
 pub mod card_manager;
 pub mod claude_mcp;
