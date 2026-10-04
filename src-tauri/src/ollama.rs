@@ -122,6 +122,43 @@ pub async fn list_models(client: &Client) -> Result<Vec<LocalModelInfo>, OllamaE
     Ok(models)
 }
 
+/// Capabilities Ollama reports for an installed model, e.g. "tools", "thinking"
+pub async fn capabilities(client: &Client, model: &str) -> Result<Vec<String>, OllamaError> {
+    Ok(fetch_models(client)
+        .await?
+        .into_iter()
+        .find(|m| m.name == model)
+        .map(|m| m.capabilities)
+        .unwrap_or_default())
+}
+
+/// Turn an unsuccessful response into Ollama's own error message
+async fn api_error(response: reqwest::Response) -> OllamaError {
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    let message = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v["error"].as_str().map(str::to_string))
+        .unwrap_or_else(|| format!("{} {}", status, text));
+    OllamaError::Api(message)
+}
+
+/// One non-streaming /api/chat call; returns the assistant message
+pub async fn chat(client: &Client, body: serde_json::Value) -> Result<serde_json::Value, OllamaError> {
+    let response = client
+        .post(format!("{}/api/chat", base_url()))
+        .json(&body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(api_error(response).await);
+    }
+
+    let mut reply: serde_json::Value = response.json().await?;
+    Ok(reply["message"].take())
+}
+
 /// Stream a chat response from Ollama, emitting 'ai-stream-chunk' events
 pub async fn chat_stream(
     app: &AppHandle,
@@ -131,10 +168,7 @@ pub async fn chat_stream(
     user_message: &str,
 ) -> Result<(), OllamaError> {
     // Thinking models would otherwise write their reasoning into the note
-    let supports_thinking = fetch_models(client)
-        .await?
-        .iter()
-        .any(|m| m.name == model && m.capabilities.iter().any(|c| c == "thinking"));
+    let supports_thinking = capabilities(client, model).await?.iter().any(|c| c == "thinking");
 
     let mut body = serde_json::json!({
         "model": model,
@@ -156,13 +190,7 @@ pub async fn chat_stream(
         .await?;
 
     if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        let message = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
-            .and_then(|v| v["error"].as_str().map(str::to_string))
-            .unwrap_or_else(|| format!("{} {}", status, text));
-        return Err(OllamaError::Api(message));
+        return Err(api_error(response).await);
     }
 
     let emit = |chunk: String, done: bool| {

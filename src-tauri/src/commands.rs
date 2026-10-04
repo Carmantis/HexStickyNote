@@ -3,6 +3,8 @@
 //! These commands are exposed to the frontend via the invoke() function.
 
 use crate::ai_manager::AiManager;
+use crate::assistant::{self, tools::ToolContext, AssistantTurn, Decision, OllamaBackend};
+use crate::calendar::db::DbPool;
 use crate::card_manager::{self, Card};
 use crate::claude_mcp;
 use crate::hextime::HexTime;
@@ -11,7 +13,7 @@ use crate::ollama;
 use crate::settings_manager::{GpuType, SettingsManager};
 use crate::window_state::{WindowState};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Manager, State};
 
 // ============================================================================
 // Types
@@ -265,6 +267,49 @@ pub async fn setup_claude_mcp(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn remove_claude_mcp() -> Result<(), String> {
     claude_mcp::remove()
+}
+
+// ============================================================================
+// Assistant Commands
+// ============================================================================
+
+/// Send the conversation (ending with the user's new message) to the assistant
+#[tauri::command]
+pub async fn assistant_send(
+    messages: Vec<serde_json::Value>,
+    app: tauri::AppHandle,
+    ai_manager: State<'_, AiManager>,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+    hextime: State<'_, HexTime>,
+) -> Result<AssistantTurn, String> {
+    let backend = OllamaBackend::new(ai_manager.client(), &settings).await.map_err(|e| e.to_string())?;
+    let calendar = app.try_state::<DbPool>();
+    let ctx = ToolContext {
+        calendar: calendar.as_ref().map(|db| db.inner()),
+        hextime: &hextime,
+        client: ai_manager.client(),
+    };
+    assistant::send(&backend, &ctx, messages).await.map_err(|e| e.to_string())
+}
+
+/// Apply the user's decisions on pending assistant actions and continue
+#[tauri::command]
+pub async fn assistant_confirm(
+    messages: Vec<serde_json::Value>,
+    decisions: Vec<Decision>,
+    app: tauri::AppHandle,
+    ai_manager: State<'_, AiManager>,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+    hextime: State<'_, HexTime>,
+) -> Result<AssistantTurn, String> {
+    let backend = OllamaBackend::new(ai_manager.client(), &settings).await.map_err(|e| e.to_string())?;
+    let calendar = app.try_state::<DbPool>();
+    let ctx = ToolContext {
+        calendar: calendar.as_ref().map(|db| db.inner()),
+        hextime: &hextime,
+        client: ai_manager.client(),
+    };
+    assistant::confirm(&backend, &ctx, messages, decisions).await.map_err(|e| e.to_string())
 }
 
 // ============================================================================

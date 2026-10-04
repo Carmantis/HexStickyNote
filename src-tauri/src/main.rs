@@ -103,6 +103,9 @@ fn main() {
             calendar::commands::notifications::dismiss_reminder,
             // Time tracking (HexTime sidecar)
             hextime_start,
+            // Assistant
+            assistant_send,
+            assistant_confirm,
         ])
         .build(tauri::generate_context!())
         .expect("Error while building HexStickyNote")
