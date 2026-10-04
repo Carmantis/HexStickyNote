@@ -1,13 +1,14 @@
 # Packages the Tauri .deb build as an Arch package.
 # Build the app first from the repository root:
-#   npm run tauri build -- --bundles deb      (or: npm run build:gpu -- --bundles deb)
+#   npm run build:full -- --bundles deb       (notes + calendar + HexTime, Vulkan)
+#   npm run tauri build -- --bundles deb      (without HexTime)
 # then here:
 #   makepkg -si
 
 pkgname=hex-sticky-note
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="Sticky notes with a 3D carousel, local AI and Claude Desktop MCP integration"
+pkgdesc="Sticky notes, calendar and time tracking with local AI and Claude Desktop MCP integration"
 arch=('x86_64')
 url="https://github.com/Carmantis/HexStickyNote"
 license=('MIT')

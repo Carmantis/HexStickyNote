@@ -12,7 +12,9 @@
     "dev:gpu": "tauri dev --features vulkan",
     "build:gpu": "tauri build --features vulkan",
     "dev:cuda": "tauri dev --features cuda",
-    "build:cuda": "tauri build --features cuda"
+    "build:cuda": "tauri build --features cuda",
+    "build:hextime": "bash sidecar/hextime/build.sh",
+    "build:full": "npm run build:hextime && tauri build --config src-tauri/tauri.hextime.conf.json --features vulkan"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.0",

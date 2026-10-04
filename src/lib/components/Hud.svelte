@@ -11,10 +11,12 @@
   import CardCarousel from "./CardCarousel.svelte";
   import Settings from "./Settings.svelte";
   import CalendarView from "$lib/calendar/CalendarView.svelte";
+  import HexTimeView from "./HexTimeView.svelte";
 
   export let isOpen: boolean = false;
 
-  type View = "notes" | "calendar";
+  type View = "notes" | "calendar" | "time";
+  const VIEWS: View[] = ["notes", "calendar", "time"];
   const VIEW_KEY = "hexstickynote.view";
 
   let view: View = loadView();
@@ -28,7 +30,8 @@
 
   function loadView(): View {
     try {
-      return localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "notes";
+      const saved = localStorage.getItem(VIEW_KEY) as View | null;
+      return saved && VIEWS.includes(saved) ? saved : "notes";
     } catch {
       return "notes";
     }
@@ -192,12 +195,25 @@
           </svg>
           <span>Calendar</span>
         </button>
+        <button
+          class="view-tab"
+          class:active={view === "time"}
+          on:click|stopPropagation={() => setView("time")}
+          title="Time tracking"
+          aria-pressed={view === "time"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="13" r="8" />
+            <path d="M12 9v4l2 2M10 2h4" />
+          </svg>
+          <span>Time</span>
+        </button>
       </nav>
 
       <div class="hud-actions">
         <!-- Action Buttons (Note mgmt) -->
         {#if view !== "notes"}
-          <!-- Calendar has its own toolbar -->
+          <!-- Calendar and HexTime have their own toolbars -->
         {:else if editing}
           <button
             class="action-button delete-button"
@@ -257,8 +273,12 @@
 
     <main class="hud-content">
       {#if view === "calendar"}
-        <div class="calendar-panel">
+        <div class="view-panel">
           <CalendarView />
+        </div>
+      {:else if view === "time"}
+        <div class="view-panel">
+          <HexTimeView />
         </div>
       {:else}
         <CardCarousel />
@@ -436,7 +456,7 @@
     pointer-events: auto; /* Sisältö pitää olla klikattavissa */
   }
 
-  .calendar-panel {
+  .view-panel {
     height: calc(100% - 2.5rem);
     margin: 1rem 1.5rem 1.5rem;
     border: 1px solid var(--border-color);

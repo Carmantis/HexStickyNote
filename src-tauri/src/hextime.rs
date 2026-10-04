@@ -17,6 +17,10 @@ const BINARY_NAME: &str = "hextime-server";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
+/// HexTime keeps language and theme in localStorage, which is tied to the
+/// origin including the port; a stable port keeps those settings across runs.
+const PREFERRED_PORT: u16 = 47613;
+
 #[derive(Debug, Error)]
 pub enum HexTimeError {
     #[error("HexTime is not bundled with this build (run sidecar/hextime/build.sh)")]
@@ -68,7 +72,12 @@ fn sidecar_path() -> Option<PathBuf> {
     None
 }
 
+/// The preferred port if it is free, otherwise any free port
 fn free_port() -> std::io::Result<u16> {
+    if TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).is_ok() {
+        return Ok(PREFERRED_PORT);
+    }
+    log::warn!("Port {} is busy; HexTime UI settings will not persist this run", PREFERRED_PORT);
     Ok(TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port())
 }
 

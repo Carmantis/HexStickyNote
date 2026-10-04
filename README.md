@@ -14,6 +14,18 @@ A modern desktop note-taking application with local AI and a unique 3D carousel 
 - **Claude Desktop Integration**: Built-in **MCP (Model Context Protocol)** server that allows Claude Desktop to read and manage your notes.
 - **Portable Data**: Notes are stored as human-readable `.md` files with YAML metadata.
 
+## Calendar and Time Tracking
+
+The HUD has three views, switched from the tabs in the top bar:
+
+- **Notes** – the sticky note carousel.
+- **Calendar** – HexCalendar (month, week and day views, reminders,
+  AI day briefings and weekly digests). It uses the same database as the standalone HexCalendar, and its AI
+  uses the Ollama model selected in **Settings**.
+- **Time** – HexTime time tracking. HexTime is a Python app; it is
+  bundled as a sidecar binary that starts when the tab is first opened and stops with HexStickyNote. It uses
+  the same database as the standalone HexTime.
+
 ## Installation
 
 ### For Developers
@@ -105,6 +117,14 @@ npm run tauri build
 npm run build:gpu
 ```
 
+To include HexTime, build its sidecar first (needs [uv](https://docs.astral.sh/uv/) and a HexTime
+checkout next to this repository, or set `HEXTIME_DIR`):
+```bash
+npm run build:full          # builds the HexTime sidecar, then the app with Vulkan
+```
+In development, `npm run build:hextime` once is enough; `npm run tauri dev` finds the sidecar in
+`src-tauri/binaries/`.
+
 Installers are written to `src-tauri/target/release/bundle/` (`.msi`/`.exe` on Windows,
 `.deb`/`.rpm` on Linux).
 
@@ -112,7 +132,7 @@ Installers are written to `src-tauri/target/release/bundle/` (`.msi`/`.exe` on W
 
 `packaging/arch/PKGBUILD` turns the `.deb` build into a pacman package:
 ```bash
-npm run build:gpu -- --bundles deb   # or: npm run tauri build -- --bundles deb
+npm run build:full -- --bundles deb  # or without HexTime: npm run build:gpu -- --bundles deb
 cd packaging/arch
 makepkg -si
 ```
