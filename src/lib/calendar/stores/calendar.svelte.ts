@@ -15,19 +15,6 @@ import type {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function tsToLocalDate(tsMs: number): string {
-  const d = new Date(tsMs);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-async function invalidateDayDigest(date: string): Promise<void> {
-  try {
-    await invoke<void>('invalidate_day_digest', { date });
-  } catch {
-    // Non-critical — ignore errors
-  }
-}
-
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -82,7 +69,6 @@ export async function createEvent(dto: CreateEventDto): Promise<CalendarEvent | 
   try {
     const event = await invoke<CalendarEvent>('create_event', { payload: dto });
     _events = [..._events, event];
-    await invalidateDayDigest(tsToLocalDate(event.start_ts));
     return event;
   } catch (e) {
     _error = String(e);
@@ -94,7 +80,6 @@ export async function updateEvent(dto: UpdateEventDto): Promise<CalendarEvent | 
   try {
     const updated = await invoke<CalendarEvent>('update_event', { payload: dto });
     _events = _events.map((e) => (e.id === updated.id ? updated : e));
-    await invalidateDayDigest(tsToLocalDate(updated.start_ts));
     return updated;
   } catch (e) {
     _error = String(e);
@@ -107,7 +92,6 @@ export async function deleteEvent(id: string): Promise<boolean> {
     const target = _events.find((e) => e.id === id);
     await invoke<void>('delete_event', { id });
     _events = _events.filter((e) => e.id !== id);
-    if (target) await invalidateDayDigest(tsToLocalDate(target.start_ts));
     return true;
   } catch (e) {
     _error = String(e);
@@ -131,7 +115,6 @@ export async function saveDayNotes(date: string, content: string): Promise<DayNo
     if (!_notes.some((n) => n.date === saved.date)) {
       _notes = [..._notes, saved];
     }
-    await invalidateDayDigest(date);
     return saved;
   } catch (e) {
     _error = String(e);

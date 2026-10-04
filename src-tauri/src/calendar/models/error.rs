@@ -10,9 +10,6 @@ pub enum CalError {
     #[error("Not found: {0}")]
     NotFound(String),
 
-    #[error("AI error: {0}")]
-    Ai(String),
-
     #[error("Validation error: {0}")]
     Validation(String),
 
@@ -26,12 +23,6 @@ pub enum CalError {
 impl From<rusqlite::Error> for CalError {
     fn from(e: rusqlite::Error) -> Self {
         CalError::Database(e.to_string())
-    }
-}
-
-impl From<reqwest::Error> for CalError {
-    fn from(e: reqwest::Error) -> Self {
-        CalError::Ai(e.to_string())
     }
 }
 

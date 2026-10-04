@@ -7,7 +7,6 @@ use crate::calendar::models::event::{
     CalendarData, CreateEventDto, CreateReminderDto, DayNotes, Event, Reminder, UpdateEventDto,
     ViewMode,
 };
-use crate::calendar::models::summary::AiDigest;
 
 // ---------------------------------------------------------------------------
 // Events
@@ -358,71 +357,6 @@ pub fn dismiss_reminder(pool: &DbPool, reminder_id: &str) -> Result<(), CalError
         return Err(CalError::NotFound(format!("Reminder '{}' not found", reminder_id)));
     }
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// AI digests
-// ---------------------------------------------------------------------------
-
-pub fn get_digest(pool: &DbPool, period_type: &str, period_key: &str) -> Result<Option<AiDigest>, CalError> {
-    let conn = pool.lock()?;
-    let digest = conn
-        .query_row(
-            "SELECT id, period_type, period_key, content, model, created_at FROM ai_digests
-             WHERE period_type=?1 AND period_key=?2",
-            params![period_type, period_key],
-            |row| {
-                Ok(AiDigest {
-                    id: row.get(0)?,
-                    period_type: row.get(1)?,
-                    period_key: row.get(2)?,
-                    content: row.get(3)?,
-                    model: row.get(4)?,
-                    created_at: row.get(5)?,
-                })
-            },
-        )
-        .optional()?;
-
-    Ok(digest)
-}
-
-pub fn delete_day_digest(pool: &DbPool, date: &str) -> Result<(), CalError> {
-    let conn = pool.lock()?;
-    conn.execute(
-        "DELETE FROM ai_digests WHERE period_type='day' AND period_key=?1",
-        params![date],
-    )?;
-    Ok(())
-}
-
-pub fn upsert_digest(
-    pool: &DbPool,
-    period_type: &str,
-    period_key: &str,
-    content: &str,
-    model: Option<&str>,
-) -> Result<AiDigest, CalError> {
-    let conn = pool.lock()?;
-    let id = Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().timestamp_millis();
-
-    conn.execute(
-        "INSERT INTO ai_digests (id, period_type, period_key, content, model, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT(period_type, period_key) DO UPDATE SET
-             content=excluded.content, model=excluded.model, created_at=excluded.created_at",
-        params![id, period_type, period_key, content, model, now],
-    )?;
-
-    Ok(AiDigest {
-        id,
-        period_type: period_type.to_string(),
-        period_key: period_key.to_string(),
-        content: content.to_string(),
-        model: model.map(String::from),
-        created_at: now,
-    })
 }
 
 #[cfg(test)]

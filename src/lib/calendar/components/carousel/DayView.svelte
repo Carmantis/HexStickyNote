@@ -11,8 +11,6 @@
   } from '$lib/calendar/utils/dateHelpers';
   import { saveDayNotes } from '$lib/calendar/stores/calendar.svelte';
   import { patchNote } from '$lib/calendar/stores/carousel.svelte';
-  import { loadDayBriefing, refreshDayBriefing, digest } from '$lib/calendar/stores/ai.svelte';
-  import DayBriefing from '../ai/DayBriefing.svelte';
 
   // Static data loaded at build time
   import holidays from '$lib/calendar/data/holidays.json';
@@ -90,10 +88,6 @@
     const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX);
     return `top: ${top}px; height: ${height}px;`;
   }
-
-  $effect(() => {
-    loadDayBriefing(date);
-  });
 </script>
 
 <div class="day-view">
@@ -110,7 +104,6 @@
         {/if}
       </div>
     </div>
-    <DayBriefing content={digest.day} loading={digest.loading} onRefresh={() => refreshDayBriefing(date)} />
   </header>
 
   <div class="day-body">

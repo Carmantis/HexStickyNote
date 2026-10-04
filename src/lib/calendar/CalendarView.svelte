@@ -21,8 +21,7 @@
   import CarouselEngine from '$lib/calendar/components/carousel/CarouselEngine.svelte';
   import ViewSwitcher from '$lib/calendar/components/ui/ViewSwitcher.svelte';
   import EventModal from '$lib/calendar/components/ui/EventModal.svelte';
-  import AISidebar from '$lib/calendar/components/ai/AISidebar.svelte';
-  import AlertToast from '$lib/calendar/components/ai/AlertToast.svelte';
+  import AlertToast from '$lib/calendar/components/ui/AlertToast.svelte';
   import '$lib/calendar/calendar.css';
 
   // Modal/panel state
@@ -30,7 +29,6 @@
   let editingEvent = $state<CalendarEvent | null>(null);
   let newEventDate = $state('');
   let newEventHour = $state(9);
-  let showAiSidebar = $state(false);
 
   const anchor = $derived(currentAnchor.current);
   const mode = $derived(viewMode.current);
@@ -104,13 +102,6 @@
       </div>
 
       <div class="toolbar-right">
-        <button
-          class="icon-btn"
-          class:active={showAiSidebar}
-          onclick={() => showAiSidebar = !showAiSidebar}
-          aria-label="AI Summary"
-          title="Weekly AI summary"
-        >✦</button>
         <button class="new-event-btn" onclick={handleNewEvent}>+ New event</button>
       </div>
     </header>
@@ -121,12 +112,6 @@
         onEventClick={handleEventClick}
         onDateClick={handleDateClick}
         onSlotClick={handleSlotClick}
-      />
-
-      <AISidebar
-        anchorDate={anchor ?? todayIso()}
-        visible={showAiSidebar}
-        onClose={() => showAiSidebar = false}
       />
     </div>
   </div>
@@ -229,30 +214,8 @@
     text-transform: capitalize;
   }
 
-  .icon-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-sm);
-    background: none;
-    border: 1px solid var(--color-border);
-    color: var(--color-text-muted);
-    font-size: var(--text-base);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
 
-  .icon-btn:hover {
-    background-color: var(--color-surface-hover);
-    color: var(--color-text);
-  }
 
-  .icon-btn.active {
-    background-color: color-mix(in srgb, var(--color-accent) 15%, transparent);
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-  }
 
   .new-event-btn {
     padding: var(--space-1) var(--space-3);

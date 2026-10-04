@@ -3,7 +3,7 @@
 <script lang="ts">
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { sendNotification } from '@tauri-apps/plugin-notification';
-  import { toast, showToast, dismissToast } from '$lib/calendar/stores/ai.svelte';
+  import { toast, showToast, dismissToast } from '$lib/calendar/stores/toast.svelte';
   import { onDestroy } from 'svelte';
 
   let unlisten: UnlistenFn | undefined;

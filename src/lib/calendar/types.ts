@@ -68,15 +68,6 @@ export interface CreateReminderDto {
   offset_min: number;
 }
 
-export interface AiDigest {
-  id: string;
-  period_type: string;
-  period_key: string;
-  content: string;
-  model: string | null;
-  created_at: number;
-}
-
 // Carousel slide wraps calendar data for a single time window
 export interface CarouselSlide {
   anchor_date: string;
@@ -85,6 +76,6 @@ export interface CarouselSlide {
 }
 
 export interface CalError {
-  kind: 'Database' | 'NotFound' | 'Ai' | 'Validation' | 'Io' | 'Serialization';
+  kind: 'Database' | 'NotFound' | 'Validation' | 'Io' | 'Serialization';
   message: string;
 }
