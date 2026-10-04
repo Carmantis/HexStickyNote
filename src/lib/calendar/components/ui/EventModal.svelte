@@ -4,6 +4,7 @@
   import { untrack } from 'svelte';
   import type { CalendarEvent, CreateEventDto, UpdateEventDto } from '$lib/calendar/types';
   import { createEvent, updateEvent, deleteEvent } from '$lib/calendar/stores/calendar.svelte';
+  import { refresh } from '$lib/calendar/stores/carousel.svelte';
 
   interface Props {
     event?: CalendarEvent | null; // null = create mode
@@ -76,6 +77,7 @@
       await createEvent(dto);
     }
 
+    await refresh();
     saving = false;
     onClose();
   }
@@ -87,6 +89,7 @@
       return;
     }
     await deleteEvent(event.id);
+    await refresh();
     onClose();
   }
 

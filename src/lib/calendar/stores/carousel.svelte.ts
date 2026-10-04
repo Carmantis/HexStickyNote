@@ -185,6 +185,23 @@ async function prefetchAll(anchor: string): Promise<void> {
   });
 }
 
+/**
+ * Re-fetch the visible slides in place (no loading state), e.g. after an
+ * event was created, edited or deleted.
+ */
+export async function refresh(): Promise<void> {
+  const anchors = _slides.map((slide) => slide.anchor_date);
+  const results = await Promise.allSettled(anchors.map(fetchSlideData));
+
+  // The user may have navigated while the requests were in flight
+  if (_slides.some((slide, i) => slide.anchor_date !== anchors[i])) return;
+
+  _slides = _slides.map((slide, i) => {
+    const result = results[i];
+    return result.status === 'fulfilled' ? { ...slide, data: result.value, loading: false } : slide;
+  });
+}
+
 async function prefetchNeighbours(_anchor: string): Promise<void> {
   const prevAnchor = _slides[0].anchor_date;
   const nextAnchor = _slides[2].anchor_date;

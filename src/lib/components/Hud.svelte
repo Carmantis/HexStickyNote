@@ -10,9 +10,14 @@
   import { settingsStore } from "$lib/stores/settingsStore";
   import CardCarousel from "./CardCarousel.svelte";
   import Settings from "./Settings.svelte";
+  import CalendarView from "$lib/calendar/CalendarView.svelte";
 
   export let isOpen: boolean = false;
 
+  type View = "notes" | "calendar";
+  const VIEW_KEY = "hexstickynote.view";
+
+  let view: View = loadView();
   let showSettings = false;
   let isGhostMode = false;
   $: editing = $editingCard;
@@ -20,6 +25,23 @@
   onMount(async () => {
     await Promise.all([cardStore.loadCards(), settingsStore.loadModels()]);
   });
+
+  function loadView(): View {
+    try {
+      return localStorage.getItem(VIEW_KEY) === "calendar" ? "calendar" : "notes";
+    } catch {
+      return "notes";
+    }
+  }
+
+  function setView(next: View) {
+    view = next;
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Not remembered; the view still switches
+    }
+  }
 
   function startResize(direction: string) {
     getCurrentWindow().startResizeDragging(direction as any);
@@ -104,6 +126,7 @@
 
     <header class="hud-header" on:mousedown={handleHeaderMouseDown}>
       <div class="hud-left-actions">
+        {#if view === "notes"}
         <button
           class="action-button"
           on:click|stopPropagation={handleOpenCardsFolder}
@@ -139,29 +162,43 @@
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
           </svg>
         </button>
+        {/if}
       </div>
 
-      <h1 class="hud-title">
-        <span class="title-icon">
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polygon
-              points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
-            />
+      <nav class="view-tabs" aria-label="Views">
+        <button
+          class="view-tab"
+          class:active={view === "notes"}
+          on:click|stopPropagation={() => setView("notes")}
+          title="Notes"
+          aria-pressed={view === "notes"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" />
+            <path d="M15 3v6h6" />
           </svg>
-        </span>
-        HexStickyNote
-      </h1>
+          <span>Notes</span>
+        </button>
+        <button
+          class="view-tab"
+          class:active={view === "calendar"}
+          on:click|stopPropagation={() => setView("calendar")}
+          title="Calendar"
+          aria-pressed={view === "calendar"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
+          <span>Calendar</span>
+        </button>
+      </nav>
 
       <div class="hud-actions">
         <!-- Action Buttons (Note mgmt) -->
-        {#if editing}
+        {#if view !== "notes"}
+          <!-- Calendar has its own toolbar -->
+        {:else if editing}
           <button
             class="action-button delete-button"
             on:click|stopPropagation={handleDeleteCard}
@@ -219,7 +256,13 @@
     </header>
 
     <main class="hud-content">
-      <CardCarousel />
+      {#if view === "calendar"}
+        <div class="calendar-panel">
+          <CalendarView />
+        </div>
+      {:else}
+        <CardCarousel />
+      {/if}
     </main>
 
     {#if showSettings}
@@ -308,26 +351,43 @@
     gap: 0.5rem;
   }
 
-  .hud-title {
-    font-size: 1.1rem;
+  .view-tabs {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
-    font-weight: 600;
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    white-space: nowrap;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    z-index: 1;
   }
 
-  .title-icon {
-    color: var(--accent-primary);
+  .view-tab {
     display: flex;
     align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 7px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .view-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .view-tab.active {
+    background: var(--accent-primary);
+    color: white;
   }
 
   .hud-actions {
@@ -374,5 +434,14 @@
     flex: 1;
     overflow: hidden;
     pointer-events: auto; /* Sisältö pitää olla klikattavissa */
+  }
+
+  .calendar-panel {
+    height: calc(100% - 2.5rem);
+    margin: 1rem 1.5rem 1.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
   }
 </style>
