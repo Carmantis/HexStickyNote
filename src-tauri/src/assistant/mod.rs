@@ -379,7 +379,7 @@ mod tests {
 
     impl Fixture {
         fn new() -> Self {
-            Self { db: DbPool::open_in_memory().unwrap(), hextime: HexTime::default(), client: Client::new() }
+            Self { db: DbPool::open_in_memory().unwrap(), hextime: HexTime::isolated(), client: Client::new() }
         }
 
         fn ctx(&self) -> ToolContext<'_> {

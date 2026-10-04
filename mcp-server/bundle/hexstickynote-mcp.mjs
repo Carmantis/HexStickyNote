@@ -6546,10 +6546,10 @@ var require_formats = __commonJS({
     function isLeapYear(year) {
       return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
     }
-    var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
+    var DATE2 = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
     var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     function date3(str2) {
-      const matches = DATE.exec(str2);
+      const matches = DATE2.exec(str2);
       if (!matches)
         return false;
       const year = +matches[1];
@@ -6566,10 +6566,10 @@ var require_formats = __commonJS({
         return -1;
       return 0;
     }
-    var TIME = /^(\d\d):(\d\d):(\d\d(?:\.\d+)?)(z|([+-])(\d\d)(?::?(\d\d))?)?$/i;
+    var TIME2 = /^(\d\d):(\d\d):(\d\d(?:\.\d+)?)(z|([+-])(\d\d)(?::?(\d\d))?)?$/i;
     function getTime(strictTimeZone) {
       return function time3(str2) {
-        const matches = TIME.exec(str2);
+        const matches = TIME2.exec(str2);
         if (!matches)
           return false;
         const hr = +matches[1];
@@ -6600,8 +6600,8 @@ var require_formats = __commonJS({
     function compareIsoTime(t1, t2) {
       if (!(t1 && t2))
         return void 0;
-      const a1 = TIME.exec(t1);
-      const a2 = TIME.exec(t2);
+      const a1 = TIME2.exec(t1);
+      const a2 = TIME2.exec(t2);
       if (!(a1 && a2))
         return void 0;
       t1 = a1[1] + a1[2] + a1[3];
@@ -6775,12 +6775,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs2, exportName) {
+    function addFormats(ajv, list, fs3, exportName) {
       var _a;
       var _b;
       (_a = (_b = ajv.opts.code).formats) !== null && _a !== void 0 ? _a : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs2[f]);
+        ajv.addFormat(f, fs3[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -23528,6 +23528,23 @@ function getCardsDirectory() {
     return path.join(dataHome, "hexstickynote", "cards");
   }
 }
+function getCalendarDatabasePath() {
+  const platform = process.platform;
+  let dataDir;
+  if (platform === "win32") {
+    const appData = process.env.APPDATA;
+    if (!appData) {
+      throw new Error("APPDATA environment variable is not set");
+    }
+    dataDir = appData;
+  } else if (platform === "darwin") {
+    dataDir = path.join(os.homedir(), "Library", "Application Support");
+  } else {
+    const xdgDataHome = process.env.XDG_DATA_HOME;
+    dataDir = xdgDataHome && path.isAbsolute(xdgDataHome) ? xdgDataHome : path.join(os.homedir(), ".local", "share");
+  }
+  return path.join(dataDir, "com.hexcalendar.app", "hexcalendar.db");
+}
 
 // dist/cards.js
 function extractTitleFromContent(content) {
@@ -23718,6 +23735,278 @@ async function deleteCard(id) {
   await fs.unlink(filePath);
 }
 
+// dist/calendar.js
+import fs2 from "fs";
+import { DatabaseSync } from "node:sqlite";
+var DEFAULT_COLOR = "#4A90D9";
+function openDatabase() {
+  const file = getCalendarDatabasePath();
+  if (!fs2.existsSync(file)) {
+    throw new Error("The calendar database does not exist yet. Open HexStickyNote once to create it.");
+  }
+  const db = new DatabaseSync(file);
+  db.exec("PRAGMA busy_timeout = 5000;");
+  return db;
+}
+function parseDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match)
+    throw new Error(`'${value}' is not a YYYY-MM-DD date`);
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const check2 = new Date(year, month - 1, day);
+  if (check2.getFullYear() !== year || check2.getMonth() !== month - 1 || check2.getDate() !== day) {
+    throw new Error(`'${value}' is not a valid date`);
+  }
+  return { year, month, day };
+}
+function parseTime(value) {
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(value.trim());
+  if (!match)
+    throw new Error(`'${value}' is not an HH:MM time`);
+  const [hours, minutes] = [Number(match[1]), Number(match[2])];
+  if (hours > 23 || minutes > 59)
+    throw new Error(`'${value}' is not a valid time`);
+  return { hours, minutes };
+}
+function localDay(date3, dayOffset = 0) {
+  const { year, month, day } = parseDate(date3);
+  return new Date(year, month - 1, day + dayOffset).getTime();
+}
+function localTime(date3, time3) {
+  const { year, month, day } = parseDate(date3);
+  const { hours, minutes } = parseTime(time3);
+  return new Date(year, month - 1, day, hours, minutes).getTime();
+}
+var pad = (n) => String(n).padStart(2, "0");
+var formatDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+var formatTime = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function summarize(row) {
+  const start = new Date(row.start_ts);
+  const end = new Date(row.end_ts);
+  const allDay = row.all_day !== 0;
+  return {
+    id: row.id,
+    title: row.title,
+    date: formatDate(start),
+    start: allDay ? null : formatTime(start),
+    end: allDay ? null : formatTime(end),
+    all_day: allDay,
+    location: row.location,
+    description: row.description,
+    recurring: row.recurrence !== null
+  };
+}
+function listEvents(fromDate, toDate) {
+  const start = localDay(fromDate);
+  const end = localDay(toDate?.trim() ? toDate : fromDate, 1);
+  if (end <= start)
+    throw new Error("to_date is before from_date");
+  const db = openDatabase();
+  try {
+    const rows = db.prepare(`SELECT id, title, description, start_ts, end_ts, all_day, location, recurrence
+         FROM events WHERE start_ts < ? AND end_ts > ? ORDER BY start_ts ASC`).all(end, start);
+    return rows.map(summarize);
+  } finally {
+    db.close();
+  }
+}
+function createEvent(event) {
+  const title = event.title.trim();
+  if (!title)
+    throw new Error("title is empty");
+  let start;
+  let end;
+  let allDay;
+  if (!event.start_time?.trim()) {
+    start = localDay(event.date);
+    end = localDay(event.date, 1);
+    allDay = true;
+  } else {
+    start = localTime(event.date, event.start_time);
+    end = event.end_time?.trim() ? localTime(event.date, event.end_time) : start + 60 * 60 * 1e3;
+    allDay = false;
+    if (end <= start)
+      throw new Error("end_time must be after start_time");
+  }
+  const row = {
+    id: v4_default(),
+    title,
+    description: event.description?.trim() || null,
+    start_ts: start,
+    end_ts: end,
+    all_day: allDay ? 1 : 0,
+    location: event.location?.trim() || null,
+    recurrence: null
+  };
+  const db = openDatabase();
+  try {
+    db.prepare(`INSERT INTO events (id, title, description, start_ts, end_ts, all_day, location, color, recurrence, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'local')`).run(row.id, row.title, row.description, row.start_ts, row.end_ts, row.all_day, row.location, DEFAULT_COLOR);
+  } finally {
+    db.close();
+  }
+  return summarize(row);
+}
+
+// dist/hextime.js
+import { spawn } from "child_process";
+import net from "net";
+var PREFERRED_PORT = 47613;
+var STARTUP_TIMEOUT_MS = 3e4;
+var baseUrl = null;
+var child = null;
+var starting = null;
+async function isHexTime(url) {
+  try {
+    const response = await fetch(`${url}/api/v1/config`, { signal: AbortSignal.timeout(1e3) });
+    return response.ok && "mode" in await response.json();
+  } catch {
+    return false;
+  }
+}
+function portIsFree(port) {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once("error", () => resolve(false));
+    probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)));
+  });
+}
+function anyFreePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const port = probe.address().port;
+      probe.close(() => resolve(port));
+    });
+  });
+}
+async function ensureServer() {
+  if (baseUrl && await isHexTime(baseUrl))
+    return baseUrl;
+  starting ??= findOrStartServer().finally(() => {
+    starting = null;
+  });
+  return starting;
+}
+async function findOrStartServer() {
+  const preferred = `http://127.0.0.1:${PREFERRED_PORT}`;
+  if (await isHexTime(preferred)) {
+    baseUrl = preferred;
+    return baseUrl;
+  }
+  const binary2 = process.env.HEXTIME_SERVER;
+  if (!binary2) {
+    throw new Error("Time tracking is not available. Open HexStickyNote, or click 'Add to Claude Desktop' in its Settings again so Claude can start HexTime itself.");
+  }
+  const port = await portIsFree(PREFERRED_PORT) ? PREFERRED_PORT : await anyFreePort();
+  const url = `http://127.0.0.1:${port}`;
+  console.error(`[hextime] Starting ${binary2} on port ${port}`);
+  child = spawn(binary2, ["--port", String(port), "--watch-stdin"], {
+    stdio: ["pipe", "ignore", "inherit"],
+    windowsHide: true
+  });
+  const started = child;
+  let exited = false;
+  started.once("exit", () => {
+    exited = true;
+    if (child === started)
+      child = null;
+  });
+  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (exited)
+      throw new Error("HexTime stopped during startup");
+    if (await isHexTime(url)) {
+      baseUrl = url;
+      return url;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  started.kill();
+  throw new Error("HexTime did not start in time");
+}
+async function api(method, path3, query, body) {
+  const url = new URL(`${await ensureServer()}/api/v1${path3}`);
+  for (const [key, value] of Object.entries(query ?? {}))
+    url.searchParams.set(key, value);
+  const response = await fetch(url, {
+    method,
+    headers: body === void 0 ? void 0 : { "Content-Type": "application/json" },
+    body: body === void 0 ? void 0 : JSON.stringify(body)
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    throw new Error(data?.error?.message ?? `HexTime returned ${response.status}`);
+  }
+  return data;
+}
+async function projects() {
+  const list = await api("GET", "/projects");
+  return new Map(list.map((p) => [p.id, p.name]));
+}
+var pad2 = (n) => String(n).padStart(2, "0");
+function summarize2(entry, projectNames) {
+  const started = entry.started_at ? new Date(entry.started_at) : null;
+  const ended = entry.ended_at ? new Date(entry.ended_at) : null;
+  return {
+    description: entry.description ?? null,
+    project: entry.project_id ? projectNames.get(entry.project_id) ?? null : null,
+    date: started ? `${started.getFullYear()}-${pad2(started.getMonth() + 1)}-${pad2(started.getDate())}` : null,
+    start: started ? `${pad2(started.getHours())}:${pad2(started.getMinutes())}` : null,
+    end: ended ? `${pad2(ended.getHours())}:${pad2(ended.getMinutes())}` : null,
+    running: !entry.ended_at,
+    duration_minutes: typeof entry.duration_seconds === "number" ? Math.floor(entry.duration_seconds / 60) : null,
+    billable: Boolean(entry.billable)
+  };
+}
+function localDayStart(date3, dayOffset = 0) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date3.trim());
+  if (!match)
+    throw new Error(`'${date3}' is not a YYYY-MM-DD date`);
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + dayOffset);
+}
+async function listTimeEntries(fromDate, toDate) {
+  const from = localDayStart(fromDate);
+  const to = localDayStart(toDate?.trim() ? toDate : fromDate, 1);
+  if (to <= from)
+    throw new Error("to_date is before from_date");
+  const entries = await api("GET", "/entries", { from: from.toISOString(), to: to.toISOString() });
+  const names = await projects();
+  const summaries = entries.map((e) => summarize2(e, names));
+  const totalMinutes = summaries.reduce((sum, e) => sum + (e.duration_minutes ?? 0), 0);
+  return { entries: summaries, total_minutes: totalMinutes };
+}
+async function getTimer() {
+  const running = await api("GET", "/timer");
+  if (!running)
+    return { running: false };
+  return { running: true, entry: summarize2(running, await projects()) };
+}
+async function startTimer(description, project) {
+  let projectId = null;
+  const names = await projects();
+  const wanted = project?.trim().toLowerCase();
+  if (wanted) {
+    const all = [...names.entries()];
+    const found = all.find(([, name]) => name.toLowerCase() === wanted) ?? all.find(([, name]) => name.toLowerCase().includes(wanted));
+    if (!found) {
+      const existing = all.map(([, name]) => name).join(", ") || "none";
+      throw new Error(`No project named '${project}'. Existing projects: ${existing}`);
+    }
+    projectId = found[0];
+  }
+  const entry = await api("POST", "/timer/start", void 0, {
+    description: description?.trim() || null,
+    project_id: projectId
+  });
+  return summarize2(entry, names);
+}
+async function stopTimer() {
+  return summarize2(await api("POST", "/timer/stop"), await projects());
+}
+
 // dist/index.js
 var server = new McpServer({
   name: "hexstickynote",
@@ -23825,6 +24114,67 @@ server.tool("delete_note", "Delete a sticky note from HexStickyNote", {
       content: [{ type: "text", text: `Error deleting note: ${err.message}` }],
       isError: true
     };
+  }
+});
+var DATE = external_exports.string().describe("Date as YYYY-MM-DD (user's local time)");
+var TIME = external_exports.string().describe("Time as HH:MM, 24-hour clock (user's local time)");
+function ok(value) {
+  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
+}
+function fail(action, err) {
+  const message = err instanceof Error ? err.message : String(err);
+  return { content: [{ type: "text", text: `Error ${action}: ${message}` }], isError: true };
+}
+server.tool("list_events", "List calendar events in HexStickyNote between two dates (inclusive). Recurring events appear only at their first occurrence.", { from_date: DATE, to_date: DATE.optional().describe("Last day, YYYY-MM-DD. Defaults to from_date.") }, async ({ from_date, to_date }) => {
+  try {
+    return ok({ events: listEvents(from_date, to_date) });
+  } catch (err) {
+    return fail("listing events", err);
+  }
+});
+server.tool("create_event", "Create a calendar event in HexStickyNote. Without start_time it is an all-day event; without end_time it lasts one hour.", {
+  title: external_exports.string(),
+  date: DATE,
+  start_time: TIME.optional(),
+  end_time: TIME.optional(),
+  location: external_exports.string().optional(),
+  description: external_exports.string().optional()
+}, async (event) => {
+  try {
+    return ok({ created: createEvent(event) });
+  } catch (err) {
+    return fail("creating the event", err);
+  }
+});
+server.tool("list_time_entries", "List tracked time entries (HexTime) between two dates (inclusive), with project, description and duration.", { from_date: DATE, to_date: DATE.optional().describe("Last day, YYYY-MM-DD. Defaults to from_date.") }, async ({ from_date, to_date }) => {
+  try {
+    return ok(await listTimeEntries(from_date, to_date));
+  } catch (err) {
+    return fail("listing time entries", err);
+  }
+});
+server.tool("get_timer", "Show the running time tracking timer (HexTime), if any.", {}, async () => {
+  try {
+    return ok(await getTimer());
+  } catch (err) {
+    return fail("reading the timer", err);
+  }
+});
+server.tool("start_timer", "Start the time tracking timer (HexTime). Stops a timer that is already running.", {
+  description: external_exports.string().optional().describe("What is being worked on"),
+  project: external_exports.string().optional().describe("Name of an existing HexTime project")
+}, async ({ description, project }) => {
+  try {
+    return ok({ started: await startTimer(description, project) });
+  } catch (err) {
+    return fail("starting the timer", err);
+  }
+});
+server.tool("stop_timer", "Stop the running time tracking timer (HexTime).", {}, async () => {
+  try {
+    return ok({ stopped: await stopTimer() });
+  } catch (err) {
+    return fail("stopping the timer", err);
   }
 });
 async function main() {

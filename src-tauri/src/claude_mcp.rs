@@ -101,11 +101,16 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), String> {
         config["mcpServers"] = json!({});
     }
 
-    // Add/update hexstickynote entry
-    config["mcpServers"]["hexstickynote"] = json!({
+    // Add/update hexstickynote entry. HEXTIME_SERVER lets the MCP server start
+    // HexTime itself when HexStickyNote is not running.
+    let mut entry = json!({
         "command": "node",
         "args": [mcp_server_path]
     });
+    if let Some(hextime) = crate::hextime::sidecar_path() {
+        entry["env"] = json!({ "HEXTIME_SERVER": hextime.to_string_lossy() });
+    }
+    config["mcpServers"]["hexstickynote"] = entry;
 
     // Write back
     let formatted = serde_json::to_string_pretty(&config)

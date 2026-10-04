@@ -34,19 +34,30 @@ pub enum HexTimeError {
 }
 
 struct Server {
-    child: Child,
+    /// None when the server was already running (started by the MCP server)
+    child: Option<Child>,
     url: String,
 }
 
 /// Managed state: the running HexTime server, if any
-#[derive(Default)]
 pub struct HexTime {
     server: Mutex<Option<Server>>,
+    /// Port to use and to look for an already running server on; None means a
+    /// private server on a random port (tests must never touch the user's data)
+    preferred_port: Option<u16>,
+    /// Database for a private server; None uses HexTime's own (the user's data)
+    database_url: Option<String>,
+}
+
+impl Default for HexTime {
+    fn default() -> Self {
+        Self { server: Mutex::new(None), preferred_port: Some(PREFERRED_PORT), database_url: None }
+    }
 }
 
 /// Where the sidecar binary is: HEXTIME_SERVER override, next to the app
 /// executable (bundled via externalBin), or src-tauri/binaries in dev builds
-fn sidecar_path() -> Option<PathBuf> {
+pub fn sidecar_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("HEXTIME_SERVER") {
         return Some(PathBuf::from(path));
     }
@@ -72,17 +83,33 @@ fn sidecar_path() -> Option<PathBuf> {
     None
 }
 
+/// Whether a HexTime server answers at `url`
+async fn is_hextime(client: &Client, url: &str) -> bool {
+    client
+        .get(format!("{}/api/v1/config", url))
+        .timeout(Duration::from_secs(1))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
 /// The preferred port if it is free, otherwise any free port
-fn free_port() -> std::io::Result<u16> {
-    if TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).is_ok() {
-        return Ok(PREFERRED_PORT);
+fn free_port(preferred: Option<u16>) -> std::io::Result<u16> {
+    if let Some(port) = preferred {
+        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return Ok(port);
+        }
+        log::warn!("Port {} is busy; HexTime UI settings will not persist this run", port);
     }
-    log::warn!("Port {} is busy; HexTime UI settings will not persist this run", PREFERRED_PORT);
     Ok(TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port())
 }
 
-fn spawn(path: &Path, port: u16) -> std::io::Result<Child> {
+fn spawn(path: &Path, port: u16, database_url: Option<&str>) -> std::io::Result<Child> {
     let mut command = Command::new(path);
+    if let Some(url) = database_url {
+        command.env("DATABASE_URL", url);
+    }
     command
         .args(["--port", &port.to_string(), "--watch-stdin"])
         // Kept open for the server's lifetime; closing it stops the server
@@ -103,24 +130,51 @@ fn spawn(path: &Path, port: u16) -> std::io::Result<Child> {
 }
 
 impl HexTime {
+    /// A server of its own on a random port with a throwaway database (for tests)
+    pub fn isolated() -> Self {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let file = std::env::temp_dir().join(format!("hextime-test-{}-{}.db", std::process::id(), n));
+        let _ = std::fs::remove_file(&file);
+        Self {
+            server: Mutex::new(None),
+            preferred_port: None,
+            database_url: Some(format!("sqlite+pysqlite:///{}", file.display())),
+        }
+    }
+
     /// Start HexTime if it is not running and return the URL of its UI
     pub async fn start(&self, client: &Client) -> Result<String, HexTimeError> {
         let mut server = self.server.lock().await;
 
         if let Some(running) = server.as_mut() {
-            if running.child.try_wait()?.is_none() {
+            let alive = match running.child.as_mut() {
+                Some(child) => child.try_wait()?.is_none(),
+                None => is_hextime(client, &running.url).await,
+            };
+            if alive {
                 return Ok(running.url.clone());
             }
             log::warn!("HexTime server had exited; starting it again");
             *server = None;
         }
 
+        // The Claude Desktop MCP server may already run HexTime on the preferred port
+        if let Some(port) = self.preferred_port {
+            let preferred = format!("http://127.0.0.1:{}", port);
+            if is_hextime(client, &preferred).await {
+                log::info!("Using the HexTime server already running at {}", preferred);
+                *server = Some(Server { child: None, url: preferred.clone() });
+                return Ok(preferred);
+            }
+        }
+
         let path = sidecar_path().ok_or(HexTimeError::NotBundled)?;
-        let port = free_port()?;
+        let port = free_port(self.preferred_port)?;
         let url = format!("http://127.0.0.1:{}", port);
 
         log::info!("Starting HexTime: {:?} on port {}", path, port);
-        let mut child = spawn(&path, port)?;
+        let mut child = spawn(&path, port, self.database_url.as_deref())?;
 
         let started = Instant::now();
         loop {
@@ -128,14 +182,7 @@ impl HexTime {
                 return Err(HexTimeError::Exited(status.to_string()));
             }
 
-            let ready = client
-                .get(format!("{}/api/v1/config", url))
-                .timeout(Duration::from_secs(1))
-                .send()
-                .await
-                .map(|r| r.status().is_success())
-                .unwrap_or(false);
-            if ready {
+            if is_hextime(client, &url).await {
                 break;
             }
 
@@ -148,7 +195,7 @@ impl HexTime {
         }
 
         log::info!("HexTime ready at {} after {:?}", url, started.elapsed());
-        *server = Some(Server { child, url: url.clone() });
+        *server = Some(Server { child: Some(child), url: url.clone() });
         Ok(url)
     }
 
@@ -158,16 +205,17 @@ impl HexTime {
             // A start is in progress; the server exits by itself once our stdin closes
             return;
         };
-        let Some(mut running) = server.take() else {
+        let Some(mut child) = server.take().and_then(|running| running.child) else {
+            // Not ours to stop
             return;
         };
 
         // Closing stdin lets HexTime exit on its own
-        drop(running.child.stdin.take());
+        drop(child.stdin.take());
 
         let deadline = Instant::now() + SHUTDOWN_GRACE;
         while Instant::now() < deadline {
-            if matches!(running.child.try_wait(), Ok(Some(_))) {
+            if matches!(child.try_wait(), Ok(Some(_))) {
                 log::info!("HexTime stopped");
                 return;
             }
@@ -175,8 +223,8 @@ impl HexTime {
         }
 
         log::warn!("HexTime did not stop in time; killing it");
-        let _ = running.child.kill();
-        let _ = running.child.wait();
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
@@ -188,7 +236,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn starts_reuses_and_stops_the_sidecar() {
-        let hextime = HexTime::default();
+        let hextime = HexTime::isolated();
         let client = Client::new();
 
         let url = hextime.start(&client).await.expect("sidecar starts");

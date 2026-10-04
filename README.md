@@ -76,14 +76,21 @@ sudo apt install build-essential libwebkit2gtk-4.1-dev libayatana-appindicator3-
 
 ## Claude Desktop (MCP)
 
-HexStickyNote includes an MCP server. You can connect it to Claude Desktop to let Claude manage your notes:
+HexStickyNote includes an MCP server. You can connect it to Claude Desktop to let Claude manage your notes, calendar and time tracking:
 
 1. Open **Settings** in HexStickyNote.
 2. Scroll to **Claude Desktop**.
 3. Click **Add to Claude Desktop**.
 4. Restart Claude Desktop.
 
-Claude can now use tools like `create_note`, `list_notes`, and `read_note` to help you manage your workspace.
+Claude can then use these tools (Claude Desktop asks before running them):
+
+- **Notes**: `create_note`, `list_notes`, `read_note`, `update_note`, `delete_note`
+- **Calendar**: `list_events`, `create_event`
+- **Time tracking**: `list_time_entries`, `get_timer`, `start_timer`, `stop_timer`
+
+The time tracking tools use the HexTime server that HexStickyNote runs; when HexStickyNote is closed,
+the MCP server starts HexTime itself. The calendar tools need Node.js 22.13 or newer (`node:sqlite`).
 
 **Tip**: When Claude creates or modifies notes, click the refresh button (🔄) in HexStickyNote to see the changes immediately.
 

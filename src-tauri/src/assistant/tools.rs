@@ -674,7 +674,7 @@ mod tests {
     #[tokio::test]
     async fn creates_and_lists_calendar_events() {
         let db = DbPool::open_in_memory().unwrap();
-        let hextime = HexTime::default();
+        let hextime = HexTime::isolated();
         let client = Client::new();
         let ctx = ToolContext { calendar: Some(&db), hextime: &hextime, client: &client };
 
@@ -699,10 +699,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn tracks_time_through_hextime() {
-        let db_file = std::env::temp_dir().join(format!("hextime-tools-test-{}.db", std::process::id()));
-        std::env::set_var("DATABASE_URL", format!("sqlite+pysqlite:///{}", db_file.display()));
-
-        let hextime = HexTime::default();
+        let hextime = HexTime::isolated();
         let client = Client::new();
         let ctx = ToolContext { calendar: None, hextime: &hextime, client: &client };
 
@@ -725,13 +722,11 @@ mod tests {
         assert_eq!(listed["entries"][0]["description"], "Writing tests");
 
         hextime.shutdown();
-        std::env::remove_var("DATABASE_URL");
-        let _ = std::fs::remove_file(&db_file);
     }
 
     #[tokio::test]
     async fn reports_a_missing_calendar() {
-        let hextime = HexTime::default();
+        let hextime = HexTime::isolated();
         let client = Client::new();
         let ctx = ToolContext { calendar: None, hextime: &hextime, client: &client };
         let result = execute(&ctx, "list_events", &json!({ "from_date": "2026-10-05" })).await;
