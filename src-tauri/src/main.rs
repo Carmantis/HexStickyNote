@@ -41,6 +41,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(AiManager::new(settings.clone()))
         .manage(settings)
         .setup(move |app| {
