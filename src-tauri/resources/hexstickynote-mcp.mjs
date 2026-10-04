@@ -23521,10 +23521,11 @@ function getCardsDirectory() {
     }
     return path.join(appData, "HexStickyNote", "HexStickyNote", "data", "cards");
   } else if (platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support", "com.HexStickyNote.HexStickyNote", "data", "cards");
+    return path.join(os.homedir(), "Library", "Application Support", "com.HexStickyNote.HexStickyNote", "cards");
   } else {
-    const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
-    return path.join(dataHome, "HexStickyNote", "HexStickyNote", "data", "cards");
+    const xdgDataHome = process.env.XDG_DATA_HOME;
+    const dataHome = xdgDataHome && path.isAbsolute(xdgDataHome) ? xdgDataHome : path.join(os.homedir(), ".local", "share");
+    return path.join(dataHome, "hexstickynote", "cards");
   }
 }
 

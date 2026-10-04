@@ -5,9 +5,9 @@
 use crate::ai_manager::AiManager;
 use crate::card_manager::{self, Card};
 use crate::claude_mcp;
-use crate::keyring_store::{AiProvider, KeyringStore};
-use crate::local_model::{self, ModelStatus};
-use crate::settings_manager::SettingsManager;
+use crate::local_model::{self, LocalModelInfo};
+use crate::ollama;
+use crate::settings_manager::{GpuType, SettingsManager};
 use crate::window_state::{WindowState};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -17,10 +17,10 @@ use tauri::State;
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderInfo {
-    pub id: String,
-    pub name: String,
-    pub configured: bool,
+pub struct LocalModelList {
+    pub models: Vec<LocalModelInfo>,
+    /// Whether a local Ollama server answered
+    pub ollama_available: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -43,67 +43,48 @@ impl From<&str> for CommandError {
 }
 
 // ============================================================================
-// API Key Management Commands
+// Model Selection Commands
 // ============================================================================
 
-/// Save an API key securely to the OS credential store
+/// List models downloaded by the app and models installed in Ollama
 #[tauri::command]
-pub async fn save_api_key(provider: String, key: String) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
+pub async fn list_local_models(ai_manager: State<'_, AiManager>) -> Result<LocalModelList, String> {
+    let mut models = local_model::list_app_models().map_err(|e| e.to_string())?;
 
-    KeyringStore::save_api_key(provider, &key).map_err(|e| e.to_string())?;
+    let ollama_available = match ollama::list_models(ai_manager.client()).await {
+        Ok(ollama_models) => {
+            models.extend(ollama_models);
+            true
+        }
+        Err(e) => {
+            log::info!("Ollama models not listed: {}", e);
+            false
+        }
+    };
 
-    Ok(())
+    Ok(LocalModelList { models, ollama_available })
 }
 
-/// Delete an API key from the credential store
+/// Get the selected model id
 #[tauri::command]
-pub async fn delete_api_key(provider: String) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-
-    KeyringStore::delete_api_key(provider).map_err(|e| e.to_string())?;
-
-    Ok(())
+pub async fn get_active_model(
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<Option<String>, String> {
+    Ok(settings.get_active_model())
 }
 
-/// Get list of all providers with their configuration status
+/// Select the model used for AI writing (None clears the selection)
 #[tauri::command]
-pub async fn get_providers() -> Vec<ProviderInfo> {
-    AiProvider::all()
-        .into_iter()
-        .map(|p| ProviderInfo {
-            id: p.as_str().to_string(),
-            name: p.display_name().to_string(),
-            configured: KeyringStore::has_api_key(p),
-        })
-        .collect()
-}
-
-/// Set the active AI provider
-#[tauri::command]
-pub async fn set_active_provider(
-    provider: String,
-    ai_manager: State<'_, AiManager>,
+pub async fn set_active_model(
+    model_id: Option<String>,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
 ) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-
-    if !KeyringStore::has_api_key(provider) {
-        return Err(format!(
-            "No API key configured for {}. Please add your API key in Settings.",
-            provider.display_name()
-        ));
+    if let Some(id) = &model_id {
+        if !id.starts_with(local_model::APP_PREFIX) && !id.starts_with(local_model::OLLAMA_PREFIX) {
+            return Err(format!("Invalid model id: {}", id));
+        }
     }
-
-    ai_manager.set_active_provider(provider).await;
-
-    Ok(())
-}
-
-/// Get the currently active provider
-#[tauri::command]
-pub async fn get_active_provider(ai_manager: State<'_, AiManager>) -> Result<Option<String>, String> {
-    let provider = ai_manager.get_active_provider().await;
-    Ok(provider.map(|p| p.as_str().to_string()))
+    settings.set_active_model(model_id).map_err(|e| e.to_string())
 }
 
 // ============================================================================
@@ -202,119 +183,54 @@ pub async fn get_all_settings(
     serde_json::to_value(app_settings).map_err(|e| e.to_string())
 }
 
-/// Set model for a cloud provider
-#[tauri::command]
-pub async fn set_provider_model(
-    provider: String,
-    model: String,
-    is_custom: bool,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    settings
-        .set_provider_model(provider, model, is_custom)
-        .map_err(|e| e.to_string())
-}
-
-/// Set local model configuration
-#[tauri::command]
-pub async fn set_local_model_config(
-    provider: String,
-    repo: String,
-    filename: String,
-    custom_url: Option<String>,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    use crate::settings_manager::LocalModelConfig;
-
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    let config = LocalModelConfig {
-        repo,
-        filename,
-        custom_url,
-    };
-    settings
-        .set_local_model_config(provider, config)
-        .map_err(|e| e.to_string())
-}
-
 /// Set GPU acceleration type
 #[tauri::command]
 pub async fn set_gpu_type(
     gpu_type: String,
     settings: State<'_, std::sync::Arc<SettingsManager>>,
 ) -> Result<(), String> {
-    use crate::keyring_store::GpuType;
     let gpu = GpuType::from_str(&gpu_type);
     settings.set_gpu_type(gpu).map_err(|e| e.to_string())
-}
-
-/// Get recommended models for each provider
-#[tauri::command]
-pub async fn get_recommended_models() -> Result<serde_json::Value, String> {
-    let models = serde_json::json!({
-        "openai": [
-            { "id": "gpt-5.2-codex", "name": "GPT-5.2 Codex (Recommended for coding)" },
-            { "id": "o3", "name": "o3 (Deep reasoning)" },
-            { "id": "o4-mini", "name": "o4-mini (Fast reasoning)" },
-            { "id": "gpt-4.1", "name": "GPT-4.1 (1M context)" },
-            { "id": "gpt-4.1-mini", "name": "GPT-4.1 Mini" },
-            { "id": "gpt-4o", "name": "GPT-4o (Multimodal)" },
-        ],
-        "anthropic": [
-            { "id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Recommended)" },
-            { "id": "claude-opus-4-6", "name": "Claude Opus 4.6 (Most capable)" },
-            { "id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5 (Fastest)" },
-        ],
-        "google": [
-            { "id": "gemini-3.1-pro-latest", "name": "Gemini 3.1 Pro (Recommended)" },
-            { "id": "gemini-3.0-deep-think", "name": "Gemini 3 Deep Think (Research)" },
-            { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Large context)" },
-            { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Fast)" },
-        ],
-    });
-    Ok(models)
 }
 
 // ============================================================================
 // Local Model Commands
 // ============================================================================
 
-/// Get status of a local model (downloaded, file size, etc.)
-#[tauri::command]
-pub async fn get_local_model_status(
-    provider: String,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<ModelStatus, String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    local_model::get_model_status(provider, Some(&settings)).map_err(|e| e.to_string())
-}
-
-/// Download a local model from HuggingFace
+/// Download a model from the Ollama library (or another Ollama-compatible registry)
 /// Progress is emitted as 'local-model-download-progress' events
 /// Completion is emitted as 'local-model-download-complete' event
+/// Returns the new model id
 #[tauri::command]
-pub async fn download_local_model(
-    provider: String,
+pub async fn download_model(
+    name: String,
     app: tauri::AppHandle,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    local_model::download_model(&app, provider, Some(&settings))
+    ai_manager: State<'_, AiManager>,
+) -> Result<String, String> {
+    local_model::download_model(&app, ai_manager.client(), &name)
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Delete a downloaded local model
+/// Cancel the running model download
+#[tauri::command]
+pub async fn cancel_model_download() -> Result<(), String> {
+    local_model::cancel_download();
+    Ok(())
+}
+
+/// Delete a model downloaded by the app (Ollama models are managed by Ollama)
 #[tauri::command]
 pub async fn delete_local_model(
-    provider: String,
+    model_id: String,
     settings: State<'_, std::sync::Arc<SettingsManager>>,
 ) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    local_model::delete_model(provider, Some(&settings))
-        .await
-        .map_err(|e| e.to_string())
+    local_model::delete_app_model(&model_id).map_err(|e| e.to_string())?;
+
+    if settings.get_active_model().as_deref() == Some(model_id.as_str()) {
+        settings.set_active_model(None).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 // ============================================================================

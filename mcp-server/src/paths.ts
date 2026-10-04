@@ -1,6 +1,8 @@
 import path from "path";
 import os from "os";
 
+// Must match the Rust side: directories::ProjectDirs::from("com", "HexStickyNote", "HexStickyNote")
+// .data_dir().join("cards") in src-tauri/src/card_manager.rs
 export function getCardsDirectory(): string {
   const platform = process.platform;
 
@@ -16,12 +18,14 @@ export function getCardsDirectory(): string {
       "Library",
       "Application Support",
       "com.HexStickyNote.HexStickyNote",
-      "data",
       "cards"
     );
   } else {
+    const xdgDataHome = process.env.XDG_DATA_HOME;
     const dataHome =
-      process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
-    return path.join(dataHome, "HexStickyNote", "HexStickyNote", "data", "cards");
+      xdgDataHome && path.isAbsolute(xdgDataHome)
+        ? xdgDataHome
+        : path.join(os.homedir(), ".local", "share");
+    return path.join(dataHome, "hexstickynote", "cards");
   }
 }

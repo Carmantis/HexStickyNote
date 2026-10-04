@@ -7,10 +7,14 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 /// Get the Claude Desktop config file path
+///
+/// - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+/// - macOS:   `~/Library/Application Support/Claude/claude_desktop_config.json`
+/// - Linux:   `$XDG_CONFIG_HOME/Claude/claude_desktop_config.json` (~/.config)
 fn get_claude_config_path() -> Result<PathBuf, String> {
-    let app_data = std::env::var("APPDATA")
-        .map_err(|_| "APPDATA environment variable not set".to_string())?;
-    Ok(PathBuf::from(app_data).join("Claude").join("claude_desktop_config.json"))
+    let base_dirs = directories::BaseDirs::new()
+        .ok_or_else(|| "Failed to determine user config directory".to_string())?;
+    Ok(base_dirs.config_dir().join("Claude").join("claude_desktop_config.json"))
 }
 
 /// Get the path to the bundled MCP server

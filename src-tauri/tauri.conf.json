@@ -28,6 +28,7 @@
       {
         "label": "orb",
         "title": "HexStickyNote Orb",
+        "url": "/orb",
         "width": 76,
         "height": 76,
         "resizable": false,

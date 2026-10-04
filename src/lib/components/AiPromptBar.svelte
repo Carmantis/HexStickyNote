@@ -3,11 +3,11 @@
    * AI Prompt Bar - Input for AI commands
    *
    * Located at the bottom of the editor.
-   * Sends prompts to the selected AI provider.
+   * Sends prompts to the selected local AI model.
    */
 
   import { createEventDispatcher } from 'svelte';
-  import { settingsStore, isAiReady, activeProvider } from '$lib/stores/settingsStore';
+  import { settingsStore, isAiReady, activeModel } from '$lib/stores/settingsStore';
 
   // Props
   export let context: string = '';
@@ -22,7 +22,7 @@
   let inputElement: HTMLInputElement;
 
   $: isReady = $isAiReady;
-  $: provider = $activeProvider;
+  $: model = $activeModel;
   $: isStreaming = $settingsStore.isStreaming;
 
   async function handleSubmit() {
@@ -66,8 +66,8 @@
       bind:value={prompt}
       on:keydown={handleKeydown}
       placeholder={isReady
-        ? `Ask ${provider?.name ?? 'AI'}...`
-        : 'Configure AI provider in Settings'}
+        ? `Ask ${model?.name ?? 'AI'}...`
+        : 'Select a local AI model in Settings'}
       disabled={!isReady || isStreaming}
       class="prompt-input"
     />

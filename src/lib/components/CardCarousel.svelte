@@ -69,6 +69,13 @@
     }
   }
 
+  // backface-visibility is ignored by WebKitGTK (Linux) on elements with a CSS
+  // filter, so cards turned away from the viewer are hidden explicitly.
+  function isFacingAway(angle: number): boolean {
+    const normalized = ((((angle % 360) + 540) % 360) - 180);
+    return Math.abs(normalized) > 90;
+  }
+
   function rotateCarousel(direction: "next" | "prev") {
     if (direction === "next") {
       currentIndex = (currentIndex + 1) % cards.length;
@@ -144,15 +151,19 @@
       <!-- 3D Carousel Container -->
       {#if !editing}
         <div class="carousel-viewport">
-          <div class="carousel-stage" style="transform: rotateY({rotation}deg)">
+          <!-- Each card gets its final angle (stage rotation folded in) instead of
+               rotating the stage: WebKitGTK culls a card whose own rotation is exactly
+               90°/270°, which made every other card vanish on Linux. -->
+          <div class="carousel-stage">
             {#each cards as card, i (card.id)}
               <div
                 class="carousel-item"
                 class:active={i === currentIndex}
-                style="transform: rotateY({i *
-                  angleIncrement}deg) translateZ({radius}px) {i === currentIndex
-                  ? 'scale(1.05)'
-                  : ''}; {i === currentIndex ? '--card-bg: rgb(18, 18, 26); --card-backdrop: none;' : ''}"
+                class:behind={isFacingAway(i * angleIncrement + rotation)}
+                style="transform: rotateY({i * angleIncrement +
+                  rotation}deg) translateZ({radius}px) scale({i === currentIndex
+                  ? 1.05
+                  : 1}); {i === currentIndex ? '--card-bg: rgb(18, 18, 26); --card-backdrop: none;' : ''}"
               >
                 <NoteCard {card} />
               </div>
@@ -301,11 +312,17 @@
     translate: -50% -50%;
     transition:
       opacity 0.4s ease,
+      visibility 0.4s,
       transform 0.6s cubic-bezier(0.4, 0, 0.2, 1),
       filter 0.4s ease;
     opacity: 0.3;
     filter: blur(5px) grayscale(40%);
     pointer-events: none; /* Prevent clicking background cards */
+  }
+
+  .carousel-item.behind {
+    opacity: 0;
+    visibility: hidden;
   }
 
   .carousel-item.active {

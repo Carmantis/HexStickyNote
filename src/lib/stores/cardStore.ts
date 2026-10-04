@@ -18,8 +18,14 @@ import { listen } from '@tauri-apps/api/event';
 export interface Card {
   id: string;
   content: string;
+  /** Unix timestamp in seconds (as stored by the backend) */
   created_at: number;
+  /** Unix timestamp in seconds (as stored by the backend) */
   updated_at: number;
+}
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
 }
 
 export type CardMode = 'view' | 'edit';
@@ -158,7 +164,7 @@ function createCardStore() {
         ...s,
         cards: s.cards.map(card =>
           card.id === cardId
-            ? { ...card, content, updated_at: Date.now() }
+            ? { ...card, content, updated_at: nowSeconds() }
             : card
         )
       }));
@@ -172,7 +178,7 @@ function createCardStore() {
         ...s,
         cards: s.cards.map(card =>
           card.id === cardId
-            ? { ...card, content: card.content + chunk, updated_at: Date.now() }
+            ? { ...card, content: card.content + chunk, updated_at: nowSeconds() }
             : card
         )
       }));

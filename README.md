@@ -1,20 +1,17 @@
 # HexStickyNote
 
-A modern desktop note-taking application with AI integration and a unique 3D carousel interface. Create, edit, and enhance your notes using powerful AI models – all while keeping your data and API keys secure on your local machine.
+A modern desktop note-taking application with local AI and a unique 3D carousel interface. Create, edit, and enhance your notes with AI models running on your own machine, or let Claude manage them through MCP – your notes stay on your computer.
 
 ![HexStickyNote Screenshot](docs/image.png)
 
 ## Features
 
 - **3D Carousel Interface**: Navigate your notes in an intuitive 3D carousel with smooth animations.
-- **AI-Powered Writing**: Enhance your notes with AI assistance from multiple providers:
-  - **Local LLM**: Run models like **Llama-Poro-2 8B Instruct** (Finnish) or **Meta-Llama-3.1 8B Instruct** (English) completely offline.
-  - **Cloud Providers**: OpenAI (o3, GPT-5.2 Codex, GPT-4.1), Anthropic (Claude Opus/Sonnet 4.6), and Google (Gemini 3.1 Pro, Gemini 3 Deep Think).
+- **Local AI Writing**: Download any model from the [Ollama library](https://ollama.com/library) (or a Hugging Face GGUF repo), or use the models already installed in your local **Ollama** – everything runs offline.
 - **GPU Acceleration**: Built-in support for **Vulkan** (Universal), **CUDA** (NVIDIA), and **ROCm** (AMD) to speed up local AI.
 - **Finnish Language Support**: Optimized prompts and UI for Finnish users.
 - **Markdown Editor**: Full-featured CodeMirror 6 editor with syntax highlighting and live preview.
 - **Claude Desktop Integration**: Built-in **MCP (Model Context Protocol)** server that allows Claude Desktop to read and manage your notes.
-- **Secure Storage**: API keys are stored in Windows Credential Locker (never in plaintext).
 - **Portable Data**: Notes are stored as human-readable `.md` files with YAML metadata.
 
 ## Installation
@@ -25,6 +22,19 @@ A modern desktop note-taking application with AI integration and a unique 3D car
 - [Node.js](https://nodejs.org/) (v18+)
 - [Rust](https://rustup.rs/) (Stable)
 - [Vulkan SDK](https://vulkan.lunarg.com/) (Optional, for GPU acceleration)
+- [CMake](https://cmake.org/) and a C/C++ compiler (for building llama.cpp)
+
+#### Linux
+Install the Tauri system libraries, CMake and (optionally) Vulkan headers + `glslc`:
+```bash
+# Arch
+sudo pacman -S --needed base-devel webkit2gtk-4.1 libayatana-appindicator librsvg openssl cmake clang \
+  vulkan-headers vulkan-icd-loader shaderc
+
+# Debian / Ubuntu
+sudo apt install build-essential libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+  libssl-dev libxdo-dev cmake clang libvulkan-dev glslc
+```
 
 #### Setup
 1. Clone the repository:
@@ -47,14 +57,21 @@ A modern desktop note-taking application with AI integration and a unique 3D car
 
 ## Local AI & GPU Support
 
-HexStickyNote supports running tekoäly (AI) locally on your computer.
+HexStickyNote runs AI models locally on your computer. Open **Settings** -> **Local AI Models**:
 
-### Recommended Models
-- **Poro 2 8B Instruct**: Excellent for general writing and help in Finnish.
-- **Llama 3.1 8B Instruct**: Powerful general-purpose model for English content.
+- **Add model from the Ollama library**: type a model name such as `llama3.2:3b` or `qwen2.5:7b`
+  (see [ollama.com/library](https://ollama.com/library)), or a Hugging Face GGUF repository such as
+  `hf.co/user/repo:Q4_K_M`, and click **Download**. The model is stored in the app's data folder and
+  runs on the built-in llama.cpp engine – Ollama does not need to be installed.
+- **Model in use**: pick the model to write with. The list shows the models you have downloaded and,
+  if [Ollama](https://ollama.com) is running, every model installed in it. Ollama models run through
+  the local Ollama API (`OLLAMA_HOST` is respected).
+
+For Finnish, [Poro 2](https://huggingface.co/LumiOpen) models work well, e.g.
+`hf.co/mradermacher/Llama-Poro-2-8B-Instruct-GGUF:Q4_K_M`.
 
 ### GPU Acceleration
-To use your graphics card for faster AI:
+To use your graphics card for downloaded models (Ollama manages its own GPU use):
 1. Ensure you have the **Vulkan SDK** or appropriate drivers installed.
 2. Build or run the app with the GPU feature enabled:
    ```bash
@@ -87,6 +104,20 @@ npm run tauri build
 # Build with GPU (Vulkan) support
 npm run build:gpu
 ```
+
+Installers are written to `src-tauri/target/release/bundle/` (`.msi`/`.exe` on Windows,
+`.deb`/`.rpm` on Linux).
+
+### Arch Linux
+
+`packaging/arch/PKGBUILD` turns the `.deb` build into a pacman package:
+```bash
+npm run build:gpu -- --bundles deb   # or: npm run tauri build -- --bundles deb
+cd packaging/arch
+makepkg -si
+```
+After installing, open **Settings** -> **Claude Desktop** once and click **Add to Claude Desktop**
+so Claude uses the installed MCP server path.
 
 ## License
 MIT - HexStickyNote

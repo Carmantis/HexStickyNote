@@ -1,20 +1,18 @@
 //! Local Inference - Runs GGUF models using llama-cpp-2
 //!
 //! Handles loading and running local GGUF models for inference.
+//! Prompts are formatted with the chat template stored in the GGUF file.
 
 use crate::ai_manager::AiStreamChunk;
-use crate::keyring_store::AiProvider;
-use crate::local_model;
-use crate::settings_manager::SettingsManager;
+use crate::settings_manager::GpuType;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::LlamaModel;
-use llama_cpp_2::model::AddBos;
+use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaChatTemplate, LlamaModel};
 use llama_cpp_2::token::data_array::LlamaTokenDataArray;
-use llama_cpp_2::token::LlamaToken;
 use std::num::NonZeroU32;
+use std::path::Path;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
@@ -31,13 +29,15 @@ pub enum LocalInferenceError {
     TokenizationError(String),
     #[error("Inference failed: {0}")]
     InferenceError(String),
-    #[error("Model not downloaded")]
-    ModelNotDownloaded,
+    #[error("Prompt is too long for the model context ({0} tokens)")]
+    PromptTooLong(usize),
     #[error("Backend not initialized")]
     BackendNotInitialized,
-    #[error("Local model error: {0}")]
-    LocalModelError(#[from] local_model::LocalModelError),
 }
+
+/// Context window and the cap on newly generated tokens
+const N_CTX: u32 = 4096;
+const MAX_NEW_TOKENS: usize = 1024;
 
 /// Initialize the llama backend (call once at startup)
 /// Returns false if initialization fails (e.g. missing Vulkan drivers)
@@ -61,65 +61,45 @@ fn get_backend() -> Result<&'static LlamaBackend, LocalInferenceError> {
         .ok_or(LocalInferenceError::BackendNotInitialized)
 }
 
-/// Format prompt for the model based on provider
-fn format_prompt(provider: AiProvider, prompt: &str, context: &str) -> String {
-    match provider {
-        AiProvider::Poro2_8B => {
-            // Llama 3.1 Instruct format - act as text editor, not chatbot
-            // Specifically instruct to use Finnish and Markdown
-            format!(
-                "<|start_header_id|>system<|end_header_id|>\n\nOlet muistiolapun tekstieditori. Päivitä lapun sisältö käyttäjän pyynnön mukaan. \nSÄÄNNÖT:\n1. Kirjoita AINA suomeksi.\n2. Käytä Markdown-muotoilua (otsikot, listat, lihavointi jne.).\n3. Tulosta VAIN päivitetty muistiolapun sisältö.\n4. Älä kirjoita mitään muuta (ei selityksiä, ei tervehdyksiä).<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nNykyinen sisältö:\n{}\n\nKäyttäjän pyyntö: {}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-                context, prompt
-            )
-        }
-        AiProvider::Llama3_8B => {
-            // Llama 3.1 Instruct format - English version
-            // System: You are a note editor
-            // User: Current content + request
-            let user_message = if context.is_empty() {
-                prompt.to_string()
-            } else {
-                format!("Current content:\n{}\n\nRequest: {}", context, prompt)
-            };
+/// Build the prompt with the model's own chat template (ChatML if it has none)
+fn format_prompt(
+    model: &LlamaModel,
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, LocalInferenceError> {
+    let template = model.chat_template(None).or_else(|e| {
+        log::warn!("Model has no usable chat template ({}), falling back to ChatML", e);
+        LlamaChatTemplate::new("chatml")
+            .map_err(|e| LocalInferenceError::TokenizationError(e.to_string()))
+    })?;
 
-            format!(
-                "<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful note editor. Update the note content according to the user's request. Use Markdown formatting. Output only the updated content without explanations.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-                user_message
-            )
-        }
-        _ => {
-            // Fallback format
-            format!(
-                "Context: {}\n\nUser: {}\n\nAssistant:",
-                context, prompt
-            )
-        }
-    }
+    let messages = [("system", system_prompt), ("user", user_message)]
+        .into_iter()
+        .map(|(role, content)| LlamaChatMessage::new(role.to_string(), content.to_string()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| LocalInferenceError::TokenizationError(e.to_string()))?;
+
+    model
+        .apply_chat_template(&template, &messages, true)
+        .map_err(|e| LocalInferenceError::TokenizationError(e.to_string()))
 }
 
 /// Run local inference with streaming
 pub async fn run_local_inference(
     app: &AppHandle,
-    provider: AiProvider,
-    prompt: &str,
-    context: &str,
-    settings: Option<&SettingsManager>,
+    model_path: &Path,
+    system_prompt: &str,
+    user_message: &str,
+    gpu_type: GpuType,
 ) -> Result<(), LocalInferenceError> {
-    // Check if model is downloaded
-    if !local_model::is_model_downloaded(provider, settings)? {
-        return Err(LocalInferenceError::ModelNotDownloaded);
-    }
-
-    let model_path = local_model::get_model_path(provider, settings)?;
     let backend = get_backend()?;
 
     log::info!("Loading model: {:?}", model_path);
 
-    // Get GPU setting
-    let gpu_type = settings.map(|s| s.get_gpu_type()).unwrap_or(crate::keyring_store::GpuType::Cpu);
-    let mut n_gpu_layers = if gpu_type != crate::keyring_store::GpuType::Cpu {
-        log::info!("GPU acceleration enabled ({:?}), offloading 32 layers", gpu_type);
-        32
+    // Offload all layers when GPU acceleration is enabled (llama.cpp clamps the count)
+    let n_gpu_layers = if gpu_type != GpuType::Cpu {
+        log::info!("GPU acceleration enabled ({:?}), offloading all layers", gpu_type);
+        999
     } else {
         0
     };
@@ -129,14 +109,14 @@ pub async fn run_local_inference(
         .with_n_gpu_layers(n_gpu_layers);
     
     let mut current_n_gpu_layers = n_gpu_layers;
-    let model = match LlamaModel::load_from_file(backend, &model_path, &model_params) {
+    let model = match LlamaModel::load_from_file(backend, model_path, &model_params) {
         Ok(m) => m,
         Err(e) => {
             if n_gpu_layers > 0 {
                 log::warn!("Failed to load model with GPU ({} layers): {}. Falling back to CPU.", n_gpu_layers, e);
                 current_n_gpu_layers = 0;
                 model_params = LlamaModelParams::default().with_n_gpu_layers(0);
-                LlamaModel::load_from_file(backend, &model_path, &model_params)
+                LlamaModel::load_from_file(backend, model_path, &model_params)
                     .map_err(|e2| LocalInferenceError::ModelLoadError(format!("CPU fallback also failed: {}", e2)))?
             } else {
                 return Err(LocalInferenceError::ModelLoadError(e.to_string()));
@@ -150,12 +130,12 @@ pub async fn run_local_inference(
         "CPU".to_string()
     };
 
-    // Create context with conservative parameters for CPU inference
+    // The whole prompt is decoded in one batch, so n_batch matches the context size
     let ctx_params = LlamaContextParams::default()
-        .with_n_ctx(NonZeroU32::new(2048)) // Increased from 512
-        .with_n_batch(512); // Increased from 128
+        .with_n_ctx(NonZeroU32::new(N_CTX))
+        .with_n_batch(N_CTX);
 
-    log::info!("Creating context with n_ctx=2048, n_batch=512");
+    log::info!("Creating context with n_ctx={}", N_CTX);
 
     let mut ctx = model
         .new_context(backend, ctx_params)
@@ -164,7 +144,7 @@ pub async fn run_local_inference(
     log::info!("Context created successfully");
 
     // Format and tokenize prompt
-    let formatted_prompt = format_prompt(provider, prompt, context);
+    let formatted_prompt = format_prompt(&model, system_prompt, user_message)?;
     let tokens = model
         .str_to_token(&formatted_prompt, AddBos::Always)
         .map_err(|e| LocalInferenceError::TokenizationError(e.to_string()))?;
@@ -178,8 +158,12 @@ pub async fn run_local_inference(
         }
     }
 
+    if tokens.len() >= N_CTX as usize {
+        return Err(LocalInferenceError::PromptTooLong(tokens.len()));
+    }
+
     // Create batch and decode
-    let mut batch = LlamaBatch::new(512, 1); // Match n_batch size
+    let mut batch = LlamaBatch::new(N_CTX as usize, 1);
 
     log::info!("Adding {} tokens to batch", tokens.len());
 
@@ -200,14 +184,13 @@ pub async fn run_local_inference(
     // Generate tokens
     let mut all_tokens = tokens.clone();
     let mut n_cur = tokens.len();
-    const MAX_TOKENS: usize = 512; // Reduced for CPU inference (was 2048)
+    let max_tokens = (tokens.len() + MAX_NEW_TOKENS).min(N_CTX as usize);
     let mut generated_tokens = 0;
     let mut emitted_chunks = 0;
-    let mut full_response = String::new();
 
-    log::info!("Starting token generation (max {} tokens)...", MAX_TOKENS);
+    log::info!("Starting token generation (max {} new tokens)...", max_tokens - n_cur);
 
-    while n_cur < MAX_TOKENS {
+    while n_cur < max_tokens {
         // Sample next token
         let candidates = ctx.candidates();
         let mut candidates_array = LlamaTokenDataArray::from_iter(candidates, false);
@@ -266,34 +249,6 @@ pub async fn run_local_inference(
         
         match text_res {
             Ok(text) => {
-                full_response.push_str(&text);
-
-                // Stop sequence detection (case insensitive-ish)
-                let stop_sequences = [
-                    "Kysymys:", 
-                    "Käyttäjä:", 
-                    "Expected Output:", 
-                    "User Request:", 
-                    "Instruction:",
-                    "Vastaus:",
-                    "<|eot_id|>",
-                    "<|end_of_text|>",
-                    "\n\n\n" // Stop on excessive newlines
-                ];
-                
-                let mut should_stop = false;
-                for seq in stop_sequences {
-                    if full_response.contains(seq) {
-                        log::info!("Stop sequence '{}' detected. Stopping.", seq);
-                        should_stop = true;
-                        break;
-                    }
-                }
-                
-                if should_stop {
-                    break;
-                }
-
                 // Log first 5 tokens to see what we're getting
                 if generated_tokens <= 5 {
                     log::info!("Token {}: id={} text={:?}", generated_tokens, token, text);

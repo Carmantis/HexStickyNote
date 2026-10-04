@@ -18,7 +18,7 @@
   $: editing = $editingCard;
 
   onMount(async () => {
-    await Promise.all([cardStore.loadCards(), settingsStore.loadProviders()]);
+    await Promise.all([cardStore.loadCards(), settingsStore.loadModels()]);
   });
 
   function startResize(direction: string) {

@@ -1,0 +1,35 @@
+# Packages the Tauri .deb build as an Arch package.
+# Build the app first from the repository root:
+#   npm run tauri build -- --bundles deb      (or: npm run build:gpu -- --bundles deb)
+# then here:
+#   makepkg -si
+
+pkgname=hex-sticky-note
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Sticky notes with a 3D carousel, local AI and Claude Desktop MCP integration"
+arch=('x86_64')
+url="https://github.com/Carmantis/HexStickyNote"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'gcc-libs')
+optdepends=(
+  'nodejs: Claude Desktop MCP server'
+  'ollama: use models installed in Ollama'
+  'vulkan-icd-loader: GPU acceleration for downloaded models (vulkan build)'
+)
+options=('!strip' '!debug')
+
+_root="$(realpath "$startdir/../..")"
+_deb="$_root/src-tauri/target/release/bundle/deb/HexStickyNote_${pkgver}_amd64.deb"
+
+prepare() {
+  if [[ ! -f $_deb ]]; then
+    error "$_deb not found. Run 'npm run tauri build -- --bundles deb' in $_root first."
+    return 1
+  fi
+}
+
+package() {
+  bsdtar -xOf "$_deb" data.tar.gz | bsdtar -xf - -C "$pkgdir"
+  install -Dm644 "$_root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

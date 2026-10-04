@@ -1,52 +1,26 @@
 <script lang="ts">
   /**
-   * Settings Component - AI Provider Configuration
+   * Settings Component - Local AI and integrations
    *
    * Allows users to:
-   * - Select active AI provider
-   * - Enter/update API keys
-   * - View provider status
+   * - Select and download local AI models
+   * - Configure GPU acceleration
+   * - Connect Claude Desktop via MCP
    */
 
   import { createEventDispatcher, onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { settingsStore, activeProvider } from '$lib/stores/settingsStore';
   import LocalModelSettings from './LocalModelSettings.svelte';
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
-  // Local model provider IDs (no API key needed)
-  const LOCAL_MODELS = ['poro2_8b', 'llama3_8b'];
-
   // GPU type state
   let gpuType = 'cpu';
-
-  // Cloud provider IDs
-  const CLOUD_PROVIDERS = ['openai', 'anthropic', 'google'];
-
-  function isLocalModel(providerId: string): boolean {
-    return LOCAL_MODELS.includes(providerId);
-  }
-
-  // Unified cloud provider state
-  let selectedCloudProvider = 'openai';
-  let apiKey = '';
-  let showApiKey = false;
-
-  // Model selection state
-  let recommendedModels: Record<string, Array<{ id: string; name: string }>> = {};
-  let selectedModel = '';
-  let isCustomModel = false;
-  let customModelInput = '';
 
   // Claude Desktop MCP state
   let claudeInstalled = false;
   let mcpConfigured = false;
   let mcpLoading = false;
-
-  $: providers = $settingsStore.providers;
-  $: activeProviderId = $settingsStore.activeProviderId;
-  $: isLoading = $settingsStore.isLoading;
 
   async function checkClaudeMcp() {
     try {
@@ -81,42 +55,9 @@
   }
 
   onMount(async () => {
-    // Fetch recommended models
     try {
-      recommendedModels = await invoke<Record<string, Array<{ id: string; name: string }>>>('get_recommended_models');
-    } catch (e) {
-      console.error('Failed to fetch recommended models:', e);
-    }
-
-    // Fetch current settings to initialize selected model for cloud provider
-    try {
-      const settings = await invoke<{
-        providers: Record<string, { model?: string; custom_model?: string }>,
-        gpu_type: string
-      }>('get_all_settings');
-
-      // Initialize GPU type
+      const settings = await invoke<{ gpu_type: string }>('get_all_settings');
       gpuType = settings.gpu_type || 'cpu';
-
-      // Initialize from active provider or default to first cloud provider
-      if (activeProviderId && CLOUD_PROVIDERS.includes(activeProviderId)) {
-        selectedCloudProvider = activeProviderId;
-      }
-
-      const providerSettings = settings.providers[selectedCloudProvider];
-      if (providerSettings) {
-        if (providerSettings.custom_model) {
-          isCustomModel = true;
-          customModelInput = providerSettings.custom_model;
-          selectedModel = 'custom';
-        } else if (providerSettings.model) {
-          selectedModel = providerSettings.model;
-        } else if (recommendedModels[selectedCloudProvider]?.length > 0) {
-          selectedModel = recommendedModels[selectedCloudProvider][0].id;
-        }
-      } else if (recommendedModels[selectedCloudProvider]?.length > 0) {
-        selectedModel = recommendedModels[selectedCloudProvider][0].id;
-      }
     } catch (e) {
       console.error('Failed to fetch settings:', e);
     }
@@ -135,69 +76,6 @@
     }
   }
 
-  async function handleCloudProviderChange(newProviderId: string) {
-    selectedCloudProvider = newProviderId;
-    apiKey = '';
-    showApiKey = false;
-
-    // Load model settings for new provider
-    try {
-      const settings = await invoke<{
-        providers: Record<string, { model?: string; custom_model?: string }>
-      }>('get_all_settings');
-
-      const providerSettings = settings.providers[newProviderId];
-      if (providerSettings) {
-        if (providerSettings.custom_model) {
-          isCustomModel = true;
-          customModelInput = providerSettings.custom_model;
-          selectedModel = 'custom';
-        } else if (providerSettings.model) {
-          isCustomModel = false;
-          selectedModel = providerSettings.model;
-        } else if (recommendedModels[newProviderId]?.length > 0) {
-          isCustomModel = false;
-          selectedModel = recommendedModels[newProviderId][0].id;
-        }
-      } else if (recommendedModels[newProviderId]?.length > 0) {
-        isCustomModel = false;
-        selectedModel = recommendedModels[newProviderId][0].id;
-      }
-    } catch (e) {
-      console.error('Failed to fetch settings:', e);
-    }
-  }
-
-  async function handleSaveCloudProvider() {
-    const key = apiKey.trim();
-    if (!key) return;
-
-    // Save API key
-    await settingsStore.saveApiKey(selectedCloudProvider, key);
-    apiKey = '';
-
-    // Auto-select provider if none is active
-    if (!activeProviderId || CLOUD_PROVIDERS.includes(activeProviderId)) {
-      await settingsStore.setActiveProvider(selectedCloudProvider);
-    }
-  }
-
-  async function handleDeleteCloudKey() {
-    await settingsStore.deleteApiKey(selectedCloudProvider);
-
-    // Clear active provider if deleted
-    if (activeProviderId === selectedCloudProvider) {
-      const configured = providers.filter(p => p.configured && p.id !== selectedCloudProvider);
-      if (configured.length > 0) {
-        await settingsStore.setActiveProvider(configured[0].id);
-      }
-    }
-  }
-
-  async function handleSelectLocalProvider(providerId: string) {
-    await settingsStore.setActiveProvider(providerId);
-  }
-
   async function handleGpuTypeChange(type: string) {
     try {
       await invoke('set_gpu_type', { gpuType: type });
@@ -205,38 +83,6 @@
     } catch (e) {
       console.error('Failed to set GPU type:', e);
     }
-  }
-
-  function toggleShowApiKey() {
-    showApiKey = !showApiKey;
-  }
-
-  async function handleModelChange(model: string) {
-    const isCustom = model === 'custom';
-    if (isCustom) {
-      isCustomModel = true;
-      selectedModel = 'custom';
-    } else {
-      isCustomModel = false;
-      selectedModel = model;
-      await invoke('set_provider_model', {
-        provider: selectedCloudProvider,
-        model,
-        is_custom: false
-      });
-    }
-  }
-
-  async function handleCustomModelSave() {
-    const customModel = customModelInput.trim();
-    if (!customModel) return;
-
-    await invoke('set_provider_model', {
-      provider: selectedCloudProvider,
-      model: customModel,
-      is_custom: true
-    });
-    selectedModel = customModel;
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -269,152 +115,18 @@
     </header>
 
     <div class="settings-content">
-      <!-- Cloud Providers Section -->
-      <section class="settings-section">
-        <h3>Cloud AI Provider</h3>
-        <p class="section-description">
-          Configure your cloud AI provider. API keys are stored securely in Windows Credential Locker.
-        </p>
-
-        <div class="cloud-provider-config">
-          <div class="form-group">
-            <label for="provider-select" class="input-label">Provider</label>
-            <select
-              id="provider-select"
-              bind:value={selectedCloudProvider}
-              on:change={() => handleCloudProviderChange(selectedCloudProvider)}
-              class="styled-select"
-            >
-              {#each providers.filter(p => CLOUD_PROVIDERS.includes(p.id)) as provider}
-                <option value={provider.id}>{provider.name}</option>
-              {/each}
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="model-select" class="input-label">Model</label>
-            <select
-              id="model-select"
-              bind:value={selectedModel}
-              on:change={() => handleModelChange(selectedModel)}
-              class="styled-select"
-            >
-              {#if recommendedModels[selectedCloudProvider]}
-                {#each recommendedModels[selectedCloudProvider] as modelOption}
-                  <option value={modelOption.id}>{modelOption.name}</option>
-                {/each}
-              {/if}
-              <option value="custom">Custom model...</option>
-            </select>
-
-            {#if isCustomModel}
-              <div class="custom-model-input">
-                <input
-                  type="text"
-                  bind:value={customModelInput}
-                  placeholder="Enter custom model name (e.g., gpt-4-turbo-2024-04-09)"
-                  class="styled-input"
-                  on:keypress={(e) => e.key === 'Enter' && handleCustomModelSave()}
-                />
-                <button
-                  class="save-key-button"
-                  on:click={handleCustomModelSave}
-                  disabled={!customModelInput.trim()}
-                >
-                  Set Model
-                </button>
-              </div>
-            {/if}
-          </div>
-
-          <div class="form-group">
-            <label for="api-key-input" class="input-label">API Key</label>
-            <div class="key-input-wrapper">
-              <input
-                id="api-key-input"
-                type={showApiKey ? 'text' : 'password'}
-                bind:value={apiKey}
-                placeholder={providers.find(p => p.id === selectedCloudProvider)?.configured
-                  ? 'Enter new key to update'
-                  : 'Enter API key'}
-                class="styled-input"
-                on:keypress={(e) => e.key === 'Enter' && handleSaveCloudProvider()}
-              />
-              <button
-                class="toggle-visibility"
-                on:click={toggleShowApiKey}
-                title={showApiKey ? 'Hide' : 'Show'}
-              >
-                {#if showApiKey}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                    <line x1="1" y1="1" x2="23" y2="23"/>
-                  </svg>
-                {:else}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                {/if}
-              </button>
-            </div>
-          </div>
-
-          <div class="key-actions">
-            <button
-              class="save-key-button"
-              on:click={handleSaveCloudProvider}
-              disabled={!apiKey.trim() || isLoading}
-            >
-              {providers.find(p => p.id === selectedCloudProvider)?.configured ? 'Update' : 'Save'}
-            </button>
-
-            {#if providers.find(p => p.id === selectedCloudProvider)?.configured}
-              <button
-                class="delete-key-button"
-                on:click={handleDeleteCloudKey}
-                disabled={isLoading}
-              >
-                Remove Key
-              </button>
-            {/if}
-          </div>
-
-          {#if providers.find(p => p.id === selectedCloudProvider)?.configured}
-            <div class="provider-status-indicator configured">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                <polyline points="22 4 12 14.01 9 11.01"/>
-              </svg>
-              <span>Configured and ready</span>
-            </div>
-
-            <button
-              class="provider-select-button"
-              class:active={activeProviderId === selectedCloudProvider}
-              on:click={() => settingsStore.setActiveProvider(selectedCloudProvider)}
-            >
-              <span class="provider-radio">
-                {#if activeProviderId === selectedCloudProvider}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="12" cy="12" r="8"/>
-                  </svg>
-                {/if}
-              </span>
-              <span>Use this provider</span>
-            </button>
-          {/if}
-        </div>
-      </section>
-
       <!-- Local Models Section -->
       <section class="settings-section">
         <h3>Local AI Models</h3>
         <p class="section-description">
-          Run AI models locally on your device. No API key or internet connection required.
+          Run AI models locally on your device. No account or internet connection required after download. To use Claude, connect it through Claude Desktop below.
         </p>
 
-        <div class="gpu-config">
+        <div class="config-box">
+          <LocalModelSettings />
+        </div>
+
+        <div class="config-box">
           <div class="form-group">
             <label for="gpu-select" class="input-label">GPU Acceleration</label>
             <select
@@ -426,35 +138,10 @@
               <option value="cpu">None (CPU only)</option>
               <option value="vulkan">Enabled (GPU Acceleration)</option>
             </select>
-            <p class="config-hint">Requires a compatible GPU and drivers. Uses Vulkan for maximum compatibility.</p>
+            <p class="config-hint">Applies to downloaded models. Requires a compatible GPU and drivers; Ollama manages its own GPU use.</p>
           </div>
         </div>
 
-        <div class="providers-list">
-          {#each providers.filter(p => isLocalModel(p.id)) as provider (provider.id)}
-            <div
-              class="provider-item"
-              class:active={activeProviderId === provider.id}
-            >
-              <div class="provider-header">
-                <button
-                  class="provider-select"
-                  on:click={() => handleSelectLocalProvider(provider.id)}
-                >
-                  <span class="provider-radio">
-                    {#if activeProviderId === provider.id}
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="12" cy="12" r="8"/>
-                      </svg>
-                    {/if}
-                  </span>
-                  <span class="provider-name">{provider.name}</span>
-                </button>
-              </div>
-              <LocalModelSettings {provider} />
-            </div>
-          {/each}
-        </div>
       </section>
 
       <section class="settings-section">
@@ -527,9 +214,8 @@
           <div>
             <p><strong>Your data is secure</strong></p>
             <p class="security-detail">
-              API keys are encrypted in Windows Credential Locker.
               Local models run completely offline on your device.
-              Your data never leaves your computer.
+              Your notes are plain Markdown files that never leave your computer.
             </p>
           </div>
         </div>
@@ -621,131 +307,7 @@
     line-height: 1.5;
   }
 
-  .providers-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
 
-  .provider-item {
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 1rem;
-    transition: border-color var(--transition-fast);
-  }
-
-  .provider-item.active {
-    border-color: var(--accent-primary);
-  }
-
-  .provider-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-  }
-
-  .provider-select {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: transparent;
-    color: var(--text-primary);
-    padding: 0;
-  }
-
-  .provider-select:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .provider-radio {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--border-color);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--accent-primary);
-  }
-
-  .provider-item.active .provider-radio {
-    border-color: var(--accent-primary);
-  }
-
-  .provider-name {
-    font-weight: 500;
-  }
-
-
-  .key-input-wrapper {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .key-input-wrapper .styled-input {
-    flex: 1;
-    font-family: 'Courier New', monospace;
-  }
-
-  .toggle-visibility {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-secondary);
-    padding: 0 0.875rem;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    align-items: center;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  }
-
-  .toggle-visibility:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: var(--text-primary);
-  }
-
-  .key-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .save-key-button,
-  .delete-key-button {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-    border-radius: 6px;
-    font-weight: 500;
-    transition: background var(--transition-fast);
-  }
-
-  .save-key-button {
-    background: var(--accent-primary);
-    color: white;
-  }
-
-  .save-key-button:hover:not(:disabled) {
-    background: var(--accent-secondary);
-  }
-
-  .save-key-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .delete-key-button {
-    background: transparent;
-    color: #ef4444;
-    border: 1px solid #ef4444;
-  }
-
-  .delete-key-button:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.1);
-  }
 
   .claude-integration {
     display: flex;
@@ -867,7 +429,7 @@
   }
 
   /* GPU Configuration */
-  .gpu-config {
+  .config-box {
     margin-bottom: 1.5rem;
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border-color);
@@ -875,17 +437,14 @@
     padding: 1.25rem;
   }
 
-  /* Cloud Provider Configuration */
-  .cloud-provider-config {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 1.25rem;
+  .config-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.5;
   }
 
+  /* Form controls */
   .form-group {
     display: flex;
     flex-direction: column;
@@ -933,109 +492,4 @@
   }
 
   /* Styled Input - Glass Morphism */
-  .styled-input {
-    width: 100%;
-    padding: 0.625rem 0.875rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  }
-
-  .styled-input:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .styled-input:focus {
-    outline: none;
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .styled-input::placeholder {
-    color: var(--text-muted);
-  }
-
-  .custom-model-input {
-    margin-top: 0.5rem;
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .custom-model-input .styled-input {
-    flex: 1;
-    font-family: 'Courier New', monospace;
-  }
-
-  .custom-model-input .save-key-button {
-    flex-shrink: 0;
-    padding: 0.625rem 1rem;
-  }
-
-  .provider-status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
-  .provider-status-indicator.configured {
-    background: rgba(34, 197, 94, 0.1);
-    border: 1px solid rgba(34, 197, 94, 0.2);
-    color: #22c55e;
-  }
-
-  .provider-select-button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    background: transparent;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    font-weight: 500;
-    transition: all var(--transition-fast);
-    cursor: pointer;
-    width: 100%;
-    justify-content: center;
-  }
-
-  .provider-select-button:hover {
-    background: var(--bg-hover);
-    border-color: rgba(99, 102, 241, 0.3);
-    color: var(--text-primary);
-  }
-
-  .provider-select-button.active {
-    background: rgba(99, 102, 241, 0.1);
-    border-color: var(--accent-primary);
-    color: var(--accent-primary);
-  }
-
-  .provider-select-button .provider-radio {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--border-color);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--accent-primary);
-    transition: border-color var(--transition-fast);
-  }
-
-  .provider-select-button.active .provider-radio {
-    border-color: var(--accent-primary);
-  }
 </style>

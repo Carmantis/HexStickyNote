@@ -16,11 +16,11 @@ tauri-plugin-shell = "2"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
-# HTTP client with streaming support
+# HTTP client with streaming support (model downloads, Ollama API)
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
-# Secure credential storage (Windows Credential Locker)
-keyring = { version = "3", features = ["windows-native"] }
+# Checksum verification for downloaded models
+sha2 = "0.10"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -57,8 +57,9 @@ llama-cpp-2 = "0.1"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-cuda = []
-vulkan = []
+cuda = ["llama-cpp-2/cuda"]
+vulkan = ["llama-cpp-2/vulkan"]
+# llama-cpp-2 has no ROCm/HIP feature yet; kept so `--features rocm` still builds
 rocm = []
 
 [profile.release]
