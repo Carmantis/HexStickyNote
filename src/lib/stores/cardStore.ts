@@ -4,7 +4,7 @@
  * This store tracks:
  * - All cards in the workspace
  * - Which card is currently being edited (if any)
- * - Card content updates from AI streaming
+ * - Card content updates from the editor and the assistant
  */
 
 import { writable, derived } from 'svelte/store';
@@ -173,7 +173,7 @@ function createCardStore() {
     },
 
     /**
-     * Update card content (used during editing or AI streaming)
+     * Update card content (used during editing)
      */
     updateCardContent(cardId: string, content: string) {
       update(s => ({
@@ -181,20 +181,6 @@ function createCardStore() {
         cards: s.cards.map(card =>
           card.id === cardId
             ? { ...card, content, updated_at: nowSeconds() }
-            : card
-        )
-      }));
-    },
-
-    /**
-     * Append content to a card (used for AI streaming)
-     */
-    appendToCard(cardId: string, chunk: string) {
-      update(s => ({
-        ...s,
-        cards: s.cards.map(card =>
-          card.id === cardId
-            ? { ...card, content: card.content + chunk, updated_at: nowSeconds() }
             : card
         )
       }));

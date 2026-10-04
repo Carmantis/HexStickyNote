@@ -1,20 +1,26 @@
 //! Ollama integration
 //!
-//! Lists the models installed in a locally running Ollama and streams chat
-//! responses through its HTTP API. The API is used instead of reading Ollama's
-//! model files directly because the system service keeps them in a directory
-//! other users cannot read, and Ollama supports newer model architectures.
+//! All AI in HexStickyNote runs on a locally running Ollama: this module lists
+//! its models, pulls new ones from the Ollama library and makes chat calls.
+//! The HTTP API is used instead of reading Ollama's model files directly
+//! because the system service keeps them in a directory other users cannot read.
 
-use crate::ai_manager::AiStreamChunk;
-use crate::local_model::{LocalModelInfo, ModelSource, OLLAMA_PREFIX};
 use futures::StreamExt;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 
 const DEFAULT_HOST: &str = "127.0.0.1:11434";
+
+/// Prefix of model ids stored in settings ("ollama:<name>")
+pub const OLLAMA_PREFIX: &str = "ollama:";
+
+static PULL_ACTIVE: AtomicBool = AtomicBool::new(false);
+static PULL_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Error)]
 pub enum OllamaError {
@@ -22,6 +28,12 @@ pub enum OllamaError {
     Unavailable(String),
     #[error("Ollama error: {0}")]
     Api(String),
+    #[error("Invalid model name: {0}")]
+    InvalidName(String),
+    #[error("Another model download is already in progress")]
+    PullInProgress,
+    #[error("Download cancelled")]
+    Cancelled,
 }
 
 impl From<reqwest::Error> for OllamaError {
@@ -32,6 +44,28 @@ impl From<reqwest::Error> for OllamaError {
             OllamaError::Api(e.to_string())
         }
     }
+}
+
+/// A model installed in Ollama, as shown in Settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// "ollama:<name>", the id stored as the active model
+    pub id: String,
+    pub name: String,
+    pub size: Option<u64>,
+    /// Short human-readable details, e.g. "27.3B · Q4_K_M"
+    pub details: Option<String>,
+    /// Whether the assistant can use it (tool calling)
+    pub supports_tools: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PullProgress {
+    pub name: String,
+    pub status: String,
+    pub completed: u64,
+    pub total: u64,
+    pub percentage: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,8 +129,8 @@ async fn fetch_models(client: &Client) -> Result<Vec<OllamaModel>, OllamaError> 
 }
 
 /// List models installed in the local Ollama
-pub async fn list_models(client: &Client) -> Result<Vec<LocalModelInfo>, OllamaError> {
-    let mut models: Vec<LocalModelInfo> = fetch_models(client)
+pub async fn list_models(client: &Client) -> Result<Vec<ModelInfo>, OllamaError> {
+    let mut models: Vec<ModelInfo> = fetch_models(client)
         .await?
         .into_iter()
         .map(|m| {
@@ -108,10 +142,10 @@ pub async fn list_models(client: &Client) -> Result<Vec<LocalModelInfo>, OllamaE
                     .collect();
                 (!parts.is_empty()).then(|| parts.join(" · "))
             });
-            LocalModelInfo {
+            ModelInfo {
                 id: format!("{}{}", OLLAMA_PREFIX, m.name),
+                supports_tools: m.capabilities.iter().any(|c| c == "tools"),
                 name: m.name,
-                source: ModelSource::Ollama,
                 size: m.size,
                 details,
             }
@@ -159,87 +193,119 @@ pub async fn chat(client: &Client, body: serde_json::Value) -> Result<serde_json
     Ok(reply["message"].take())
 }
 
-/// Stream a chat response from Ollama, emitting 'ai-stream-chunk' events
-pub async fn chat_stream(
-    app: &AppHandle,
-    client: &Client,
-    model: &str,
-    system_prompt: &str,
-    user_message: &str,
-) -> Result<(), OllamaError> {
-    // Thinking models would otherwise write their reasoning into the note
-    let supports_thinking = capabilities(client, model).await?.iter().any(|c| c == "thinking");
+// ============================================================================
+// Pulling models
+// ============================================================================
 
-    let mut body = serde_json::json!({
-        "model": model,
-        "stream": true,
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": user_message }
-        ]
-    });
-    if supports_thinking {
-        body["think"] = serde_json::json!(false);
+/// Turn what a user typed or pasted into a name Ollama can pull:
+/// `llama3.2:3b`, `user/model`, `hf.co/user/repo:Q4_K_M`, or an ollama.com URL.
+pub fn normalize_model_name(input: &str) -> Result<String, OllamaError> {
+    let invalid = || OllamaError::InvalidName(input.trim().to_string());
+
+    let mut name = input.trim();
+    for prefix in ["https://", "http://"] {
+        name = name.strip_prefix(prefix).unwrap_or(name);
     }
+    for prefix in ["www.ollama.com/", "ollama.com/", "registry.ollama.ai/"] {
+        name = name.strip_prefix(prefix).unwrap_or(name);
+    }
+    let name = name.strip_prefix("library/").unwrap_or(name).trim_end_matches('/');
+    let name = match name.strip_prefix("huggingface.co/") {
+        Some(rest) => format!("hf.co/{}", rest),
+        None => name.to_string(),
+    };
 
-    log::info!("Starting Ollama chat with model {}", model);
+    let valid_chars = name.chars().all(|c| c.is_ascii_alphanumeric() || "._-/:".contains(c));
+    let valid_parts = name.split(['/', ':']).all(|part| !part.is_empty() && part != "." && part != "..");
+    if name.is_empty() || !valid_chars || !valid_parts || name.matches(':').count() > 1 {
+        return Err(invalid());
+    }
+    Ok(name)
+}
+
+/// Resets the "pull in progress" flag when the pull ends in any way
+struct PullGuard;
+
+impl Drop for PullGuard {
+    fn drop(&mut self) {
+        PULL_ACTIVE.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Ask the running pull to stop
+pub fn cancel_pull() {
+    PULL_CANCELLED.store(true, Ordering::SeqCst);
+}
+
+/// Download a model into Ollama (`ollama pull`).
+/// Emits 'model-pull-progress' events; returns the model id ("ollama:<name>").
+pub async fn pull_model(app: &AppHandle, client: &Client, input: &str) -> Result<String, OllamaError> {
+    let name = normalize_model_name(input)?;
+
+    if PULL_ACTIVE.swap(true, Ordering::SeqCst) {
+        return Err(OllamaError::PullInProgress);
+    }
+    let _guard = PullGuard;
+    PULL_CANCELLED.store(false, Ordering::SeqCst);
+
+    log::info!("Pulling model {} into Ollama", name);
     let response = client
-        .post(format!("{}/api/chat", base_url()))
-        .json(&body)
+        .post(format!("{}/api/pull", base_url()))
+        .json(&serde_json::json!({ "model": name, "stream": true }))
         .send()
         .await?;
-
     if !response.status().is_success() {
         return Err(api_error(response).await);
     }
 
-    let emit = |chunk: String, done: bool| {
-        app.emit(
-            "ai-stream-chunk",
-            AiStreamChunk {
-                chunk,
-                done,
-                gpu_info: Some("Ollama".to_string()),
-            },
-        )
-        .ok();
-    };
-
-    // The response is newline-delimited JSON; a line may span several network chunks
+    // Progress per layer; the total is the sum over the layers seen so far
+    let mut layers: HashMap<String, (u64, u64)> = HashMap::new();
     let mut stream = response.bytes_stream();
     let mut buffer: Vec<u8> = Vec::new();
+    let mut last_percentage = -1.0;
 
     while let Some(chunk) = stream.next().await {
+        if PULL_CANCELLED.load(Ordering::SeqCst) {
+            // Dropping the response closes the connection, which stops the pull
+            return Err(OllamaError::Cancelled);
+        }
         buffer.extend_from_slice(&chunk?);
 
         while let Some(pos) = buffer.iter().position(|b| *b == b'\n') {
             let line: Vec<u8> = buffer.drain(..=pos).collect();
-            let line = String::from_utf8_lossy(&line);
-            let line = line.trim();
-            if line.is_empty() {
+            let Ok(update) = serde_json::from_slice::<serde_json::Value>(&line) else {
                 continue;
-            }
+            };
 
-            let json: serde_json::Value = serde_json::from_str(line)
-                .map_err(|e| OllamaError::Api(format!("invalid response: {}", e)))?;
-
-            if let Some(error) = json["error"].as_str() {
+            if let Some(error) = update["error"].as_str() {
                 return Err(OllamaError::Api(error.to_string()));
             }
-            if let Some(content) = json["message"]["content"].as_str() {
-                if !content.is_empty() {
-                    emit(content.to_string(), false);
-                }
+            let status = update["status"].as_str().unwrap_or_default().to_string();
+            if status == "success" {
+                log::info!("Model {} pulled", name);
+                return Ok(format!("{}{}", OLLAMA_PREFIX, name));
             }
-            if json["done"].as_bool() == Some(true) {
-                emit(String::new(), true);
-                return Ok(());
+
+            if let (Some(digest), Some(total)) = (update["digest"].as_str(), update["total"].as_u64()) {
+                let completed = update["completed"].as_u64().unwrap_or(0);
+                layers.insert(digest.to_string(), (completed, total));
+            }
+            let completed: u64 = layers.values().map(|(c, _)| c).sum();
+            let total: u64 = layers.values().map(|(_, t)| t).sum();
+            let percentage = if total > 0 { completed as f64 / total as f64 * 100.0 } else { 0.0 };
+
+            if (percentage - last_percentage).abs() >= 0.5 || total == 0 {
+                last_percentage = percentage;
+                app.emit(
+                    "model-pull-progress",
+                    PullProgress { name: name.clone(), status, completed, total, percentage },
+                )
+                .ok();
             }
         }
     }
 
-    emit(String::new(), true);
-    Ok(())
+    Err(OllamaError::Api("the download ended unexpectedly".to_string()))
 }
 
 #[cfg(test)]
@@ -263,5 +329,27 @@ mod tests {
             assert_eq!(base_url(), expected, "OLLAMA_HOST={:?}", env);
         }
         std::env::remove_var("OLLAMA_HOST");
+    }
+
+    #[test]
+    fn normalizes_model_names() {
+        let cases = [
+            ("llama3.2:3b", "llama3.2:3b"),
+            ("  qwen2.5  ", "qwen2.5"),
+            ("https://ollama.com/library/qwen2.5:7b", "qwen2.5:7b"),
+            ("ollama.com/someone/model", "someone/model"),
+            ("hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M", "hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M"),
+            ("https://huggingface.co/user/repo", "hf.co/user/repo"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(normalize_model_name(input).unwrap(), expected, "{input}");
+        }
+    }
+
+    #[test]
+    fn rejects_bad_model_names() {
+        for bad in ["", "mod el", "a/../b", "model:", "a:b:c", "rm -rf", "x;y"] {
+            assert!(normalize_model_name(bad).is_err(), "{bad} should be rejected");
+        }
     }
 }

@@ -135,17 +135,6 @@
     }
   }
 
-  // Append content (for AI streaming)
-  export function appendContent(text: string) {
-    if (editorView) {
-      const len = editorView.state.doc.length;
-      editorView.dispatch({
-        changes: { from: len, to: len, insert: text },
-        selection: { anchor: len + text.length }
-      });
-    }
-  }
-
   // Get current content
   export function getContent(): string {
     return editorView?.state.doc.toString() ?? content;
@@ -171,7 +160,7 @@
     const _ = showLineNumbers;
   }
 
-  // React to content prop changes (e.g. AI streaming)
+  // React to content prop changes (e.g. the assistant updated the note)
   $: if (editorView && content !== undefined) {
     setContent(content);
   }

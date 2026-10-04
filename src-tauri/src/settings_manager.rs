@@ -1,6 +1,6 @@
 //! Application Settings Manager
 //!
-//! Manages user preferences: the active local model and GPU acceleration.
+//! Manages user preferences: the Ollama model the assistant uses.
 //! Settings are stored in a JSON file.
 
 use directories::ProjectDirs;
@@ -22,48 +22,17 @@ pub enum SettingsError {
     ParseError(String),
 }
 
-/// GPU acceleration type for the built-in llama.cpp backend
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GpuType {
-    Cpu,
-    Vulkan,
-    Cuda,
-    Rocm,
-}
-
-impl GpuType {
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "vulkan" => GpuType::Vulkan,
-            "cuda" => GpuType::Cuda,
-            "rocm" => GpuType::Rocm,
-            _ => GpuType::Cpu,
-        }
-    }
-}
-
 /// Application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
-    /// Selected model id ("app:<file>.gguf" or "ollama:<name>"), see local_model.rs
+    /// Selected model id ("ollama:<name>")
     #[serde(default)]
     pub active_model: Option<String>,
-    /// GPU acceleration type (cpu, vulkan, cuda, rocm)
-    #[serde(default = "default_gpu_type")]
-    pub gpu_type: GpuType,
-}
-
-fn default_gpu_type() -> GpuType {
-    GpuType::Cpu
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
-        Self {
-            active_model: None,
-            gpu_type: GpuType::Cpu,
-        }
+        Self { active_model: None }
     }
 }
 
@@ -154,24 +123,6 @@ impl SettingsManager {
         self.save()
     }
 
-    /// Get current GPU type
-    pub fn get_gpu_type(&self) -> GpuType {
-        let settings = self.settings.read().unwrap();
-        settings.gpu_type
-    }
-
-    /// Set GPU type
-    pub fn set_gpu_type(&self, gpu_type: GpuType) -> Result<(), SettingsError> {
-        let mut settings = self.settings.write().unwrap();
-        settings.gpu_type = gpu_type;
-        drop(settings);
-        self.save()
-    }
-
-    /// Get all settings (for frontend)
-    pub fn get_all_settings(&self) -> AppSettings {
-        self.settings.read().unwrap().clone()
-    }
 }
 
 impl Default for SettingsManager {

@@ -4,11 +4,10 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use hex_sticky_note::ai_manager::AiManager;
 use hex_sticky_note::calendar;
 use hex_sticky_note::commands::*;
 use hex_sticky_note::hextime::HexTime;
-use hex_sticky_note::local_inference;
+use hex_sticky_note::http::HttpClient;
 use hex_sticky_note::settings_manager::SettingsManager;
 use std::sync::Arc;
 use tauri::Manager;
@@ -28,13 +27,6 @@ fn main() {
         }
     }
 
-    // Initialize llama backend for local models (non-fatal if it fails)
-    if local_inference::init_backend() {
-        log::info!("Llama backend initialized");
-    } else {
-        log::warn!("Llama backend not available - local AI features disabled");
-    }
-
     // Initialize settings manager
     let settings = Arc::new(SettingsManager::new().expect("Failed to initialize settings"));
     log::info!("Settings manager initialized");
@@ -42,7 +34,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
-        .manage(AiManager::new(settings.clone()))
+        .manage(HttpClient::new())
         .manage(settings)
         .manage(HexTime::default())
         .setup(|app| {
@@ -58,21 +50,15 @@ fn main() {
             list_local_models,
             get_active_model,
             set_active_model,
-            // AI Streaming
-            invoke_ai_stream,
             // Card Storage
             create_card,
             get_cards,
             save_card,
             delete_card,
             reload_cards,
-            // Settings
-            get_all_settings,
-            set_gpu_type,
-            // Local Models
-            download_model,
-            cancel_model_download,
-            delete_local_model,
+            // Model Downloads (Ollama)
+            pull_model,
+            cancel_model_pull,
             // Window State
             load_window_state,
             save_main_window_position,

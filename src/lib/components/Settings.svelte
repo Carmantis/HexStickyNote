@@ -14,9 +14,6 @@
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
-  // GPU type state
-  let gpuType = 'cpu';
-
   // Claude Desktop MCP state
   let claudeInstalled = false;
   let mcpConfigured = false;
@@ -54,15 +51,7 @@
     mcpLoading = false;
   }
 
-  onMount(async () => {
-    try {
-      const settings = await invoke<{ gpu_type: string }>('get_all_settings');
-      gpuType = settings.gpu_type || 'cpu';
-    } catch (e) {
-      console.error('Failed to fetch settings:', e);
-    }
-
-    // Check Claude Desktop MCP status
+  onMount(() => {
     checkClaudeMcp();
   });
 
@@ -73,15 +62,6 @@
   function handleBackdropClick(event: MouseEvent) {
     if (event.target === event.currentTarget) {
       handleClose();
-    }
-  }
-
-  async function handleGpuTypeChange(type: string) {
-    try {
-      await invoke('set_gpu_type', { gpuType: type });
-      gpuType = type;
-    } catch (e) {
-      console.error('Failed to set GPU type:', e);
     }
   }
 
@@ -115,31 +95,16 @@
     </header>
 
     <div class="settings-content">
-      <!-- Local Models Section -->
+      <!-- AI Model Section -->
       <section class="settings-section">
-        <h3>Local AI Models</h3>
+        <h3>AI Model</h3>
         <p class="section-description">
-          Run AI models locally on your device. No account or internet connection required after download. To use Claude, connect it through Claude Desktop below.
+          The assistant runs on <a href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a> on your own computer.
+          Pick a model that supports tools; to use Claude instead, connect it through Claude Desktop below.
         </p>
 
         <div class="config-box">
           <LocalModelSettings />
-        </div>
-
-        <div class="config-box">
-          <div class="form-group">
-            <label for="gpu-select" class="input-label">GPU Acceleration</label>
-            <select
-              id="gpu-select"
-              bind:value={gpuType}
-              on:change={() => handleGpuTypeChange(gpuType)}
-              class="styled-select"
-            >
-              <option value="cpu">None (CPU only)</option>
-              <option value="vulkan">Enabled (GPU Acceleration)</option>
-            </select>
-            <p class="config-hint">Applies to downloaded models. Requires a compatible GPU and drivers; Ollama manages its own GPU use.</p>
-          </div>
         </div>
 
       </section>
@@ -214,7 +179,7 @@
           <div>
             <p><strong>Your data is secure</strong></p>
             <p class="security-detail">
-              Local models run completely offline on your device.
+              The assistant runs on your own Ollama, and every change it proposes waits for your approval.
               Your notes are plain Markdown files that never leave your computer.
             </p>
           </div>
@@ -436,60 +401,4 @@
     border-radius: 12px;
     padding: 1.25rem;
   }
-
-  .config-hint {
-    margin: 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    line-height: 1.5;
-  }
-
-  /* Form controls */
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .input-label {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  /* Styled Select - Glass Morphism */
-  .styled-select {
-    width: 100%;
-    padding: 0.625rem 0.875rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  }
-
-  .styled-select:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .styled-select:focus {
-    outline: none;
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .styled-select option {
-    background-color: #1a1a24;
-    color: white;
-  }
-
-  /* Styled Input - Glass Morphism */
 </style>

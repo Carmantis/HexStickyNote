@@ -28,7 +28,7 @@
   let savedEntries = new Set<number>();
 
   $: state = $assistantStore;
-  $: isReady = $activeModel?.source === 'ollama';
+  $: isReady = !!$activeModel?.supports_tools;
   $: canSend = isReady && !state.isBusy && state.pending.length === 0;
   $: context = { view, open_note_id: $editingCard?.id ?? null } satisfies AssistantContext;
 
@@ -101,7 +101,7 @@
     {#if !isReady}
       <p class="notice">
         The assistant needs an Ollama model that supports tools. Choose one under
-        <strong>Settings → Local AI Models</strong>.
+        <strong>Settings → AI Model</strong>.
       </p>
     {:else if state.entries.length === 0}
       <div class="welcome">

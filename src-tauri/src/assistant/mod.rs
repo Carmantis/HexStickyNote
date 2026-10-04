@@ -12,8 +12,7 @@
 
 pub mod tools;
 
-use crate::local_model::OLLAMA_PREFIX;
-use crate::ollama;
+use crate::ollama::{self, OLLAMA_PREFIX};
 use crate::settings_manager::SettingsManager;
 use chrono::Local;
 use reqwest::Client;

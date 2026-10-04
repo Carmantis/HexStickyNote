@@ -1,10 +1,9 @@
 <script lang="ts">
   /**
-   * Local Model Settings
+   * AI Model Settings
    *
-   * - Pick the model used for AI writing from models downloaded by the app
-   *   and models installed in a local Ollama
-   * - Download new models from the Ollama library
+   * - Pick the Ollama model the assistant uses
+   * - Pull new models from the Ollama library into Ollama
    */
 
   import { onMount, onDestroy } from 'svelte';
@@ -12,25 +11,23 @@
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { settingsStore, formatBytes, type LocalModel } from '$lib/stores/settingsStore';
 
-  interface DownloadProgress {
+  interface PullProgress {
     name: string;
-    bytes_downloaded: number;
-    total_bytes: number | null;
+    status: string;
+    completed: number;
+    total: number;
     percentage: number;
   }
 
   let modelName = '';
   let isDownloading = false;
   let downloadingName = '';
-  let downloadProgress: DownloadProgress | null = null;
+  let downloadProgress: PullProgress | null = null;
   let downloadError: string | null = null;
-  let actionError: string | null = null;
 
   let unlistenProgress: UnlistenFn | undefined;
 
   $: models = $settingsStore.models;
-  $: appModels = models.filter(m => m.source === 'app');
-  $: ollamaModels = models.filter(m => m.source === 'ollama');
   $: activeModelId = $settingsStore.activeModelId;
   $: activeModel = models.find(m => m.id === activeModelId) ?? null;
   $: isRefreshing = $settingsStore.isLoading;
@@ -38,7 +35,7 @@
   onMount(async () => {
     await settingsStore.loadModels();
 
-    unlistenProgress = await listen<DownloadProgress>('local-model-download-progress', (event) => {
+    unlistenProgress = await listen<PullProgress>('model-pull-progress', (event) => {
       downloadProgress = event.payload;
     });
   });
@@ -49,12 +46,12 @@
 
   function describe(model: LocalModel): string {
     const extra = [model.details, formatBytes(model.size)].filter(Boolean).join(' · ');
-    return extra ? `${model.name} (${extra})` : model.name;
+    const label = extra ? `${model.name} (${extra})` : model.name;
+    return model.supports_tools ? label : `${label} – no tool support`;
   }
 
   async function handleSelect(event: Event) {
     const value = (event.target as HTMLSelectElement).value;
-    actionError = null;
     await settingsStore.setActiveModel(value || null);
   }
 
@@ -68,10 +65,10 @@
     downloadError = null;
 
     try {
-      const id = await invoke<string>('download_model', { name });
+      const id = await invoke<string>('pull_model', { name });
       modelName = '';
       await settingsStore.loadModels();
-      // Use the first downloaded model straight away
+      // Use the first model straight away
       if (!$settingsStore.activeModelId) {
         await settingsStore.setActiveModel(id);
       }
@@ -85,20 +82,7 @@
   }
 
   async function handleCancel() {
-    await invoke('cancel_model_download');
-  }
-
-  async function handleDelete() {
-    if (!activeModel || activeModel.source !== 'app') return;
-    if (!confirm(`Delete the downloaded model ${activeModel.name}?`)) return;
-
-    try {
-      await invoke('delete_local_model', { modelId: activeModel.id });
-      actionError = null;
-    } catch (e) {
-      actionError = String(e);
-    }
-    await settingsStore.loadModels();
+    await invoke('cancel_model_pull');
   }
 </script>
 
@@ -115,29 +99,18 @@
         disabled={models.length === 0 && !activeModelId}
       >
         {#if models.length === 0}
-          <option value="">No models yet – add one below</option>
+          <option value="">{$settingsStore.ollamaAvailable ? 'No models yet – add one below' : 'Ollama is not running'}</option>
         {:else}
           <option value="">Select a model…</option>
         {/if}
         {#if activeModelId && !activeModel}
           <option value={activeModelId} disabled>
-            {activeModelId.replace(/^(app|ollama):/, '')} (unavailable)
+            {activeModelId.replace(/^[a-z]+:/, '')} (unavailable)
           </option>
         {/if}
-        {#if appModels.length > 0}
-          <optgroup label="Downloaded">
-            {#each appModels as model (model.id)}
-              <option value={model.id}>{describe(model)}</option>
-            {/each}
-          </optgroup>
-        {/if}
-        {#if ollamaModels.length > 0}
-          <optgroup label="Ollama">
-            {#each ollamaModels as model (model.id)}
-              <option value={model.id}>{describe(model)}</option>
-            {/each}
-          </optgroup>
-        {/if}
+        {#each models as model (model.id)}
+          <option value={model.id}>{describe(model)}</option>
+        {/each}
       </select>
 
       <button
@@ -156,24 +129,16 @@
 
     <p class="config-hint">
       {#if $settingsStore.ollamaAvailable}
-        Ollama models run through Ollama; downloaded models run inside HexStickyNote.
+        Models installed in Ollama. Remove models with <code>ollama rm</code>.
       {:else}
-        Ollama is not running – start it to use the models you have installed there.
+        Ollama is not running. Install it from ollama.com and start it, then refresh.
       {/if}
     </p>
 
     {#if activeModelId && !activeModel}
       <p class="warning-text">The selected model is not available right now.</p>
-    {/if}
-
-    {#if activeModel?.source === 'app'}
-      <button class="delete-model-button" on:click={handleDelete}>
-        Delete downloaded model
-      </button>
-    {/if}
-
-    {#if actionError}
-      <div class="error-message">{actionError}</div>
+    {:else if activeModel && !activeModel.supports_tools}
+      <p class="warning-text">This model cannot use tools, so the assistant cannot work with it.</p>
     {/if}
   </div>
 
@@ -185,7 +150,7 @@
       <div class="download-progress">
         <div class="progress-info">
           <span>Downloading {downloadingName}…</span>
-          {#if downloadProgress}
+          {#if downloadProgress?.total}
             <span class="progress-percentage">{downloadProgress.percentage.toFixed(1)}%</span>
           {/if}
         </div>
@@ -194,10 +159,10 @@
         </div>
         <div class="progress-footer">
           <span class="progress-details">
-            {#if downloadProgress?.total_bytes}
-              {formatBytes(downloadProgress.bytes_downloaded)} / {formatBytes(downloadProgress.total_bytes)}
+            {#if downloadProgress?.total}
+              {formatBytes(downloadProgress.completed)} / {formatBytes(downloadProgress.total)}
             {:else}
-              Fetching model information…
+              {downloadProgress?.status ?? 'Contacting Ollama…'}
             {/if}
           </span>
           <button class="cancel-button" on:click={handleCancel}>Cancel</button>
@@ -215,7 +180,7 @@
           autocomplete="off"
           on:keydown={(e) => e.key === 'Enter' && handleDownload()}
         />
-        <button class="download-button" on:click={handleDownload} disabled={!modelName.trim()}>
+        <button class="download-button" on:click={handleDownload} disabled={!modelName.trim() || !$settingsStore.ollamaAvailable}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="7 10 12 15 17 10"/>
@@ -225,8 +190,9 @@
         </button>
       </div>
       <p class="config-hint">
-        Use a name from ollama.com/library, e.g. <code>qwen2.5:7b</code>, or a Hugging Face GGUF
-        repository such as <code>hf.co/user/repo:Q4_K_M</code>.
+        Use a name from ollama.com/library or a Hugging Face GGUF repository
+        (<code>hf.co/user/repo:Q4_K_M</code>). The assistant needs a model with tool support,
+        e.g. <code>qwen3:8b</code> or <code>llama3.1:8b</code>.
       </p>
     {/if}
 
@@ -370,7 +336,6 @@
     cursor: not-allowed;
   }
 
-  .delete-model-button,
   .cancel-button {
     align-self: flex-start;
     padding: 0.5rem 1rem;
@@ -383,7 +348,6 @@
     transition: background var(--transition-fast);
   }
 
-  .delete-model-button:hover,
   .cancel-button:hover {
     background: rgba(239, 68, 68, 0.1);
   }

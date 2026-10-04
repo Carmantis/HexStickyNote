@@ -17,11 +17,8 @@ tauri-plugin-notification = "2"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
-# HTTP client with streaming support (model downloads, Ollama API)
+# HTTP client with streaming support (Ollama API, HexTime sidecar)
 reqwest = { version = "0.12", features = ["json", "stream"] }
-
-# Checksum verification for downloaded models
-sha2 = "0.10"
 
 # Calendar storage (HexCalendar)
 rusqlite = { version = "0.31", features = ["bundled"] }
@@ -55,16 +52,10 @@ env_logger = "0.11"
 # Directory utilities for persistent storage
 directories = "5"
 
-# Local LLM inference with GGUF models
-llama-cpp-2 = "0.1"
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-cuda = ["llama-cpp-2/cuda"]
-vulkan = ["llama-cpp-2/vulkan"]
-# llama-cpp-2 has no ROCm/HIP feature yet; kept so `--features rocm` still builds
-rocm = []
 
 [profile.release]
 panic = "abort"

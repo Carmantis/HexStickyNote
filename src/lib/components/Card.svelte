@@ -11,7 +11,6 @@
   import DOMPurify from 'dompurify';
   import { cardStore, getCardMode, type Card } from '$lib/stores/cardStore';
   import Editor from './Editor.svelte';
-  import AiPromptBar from './AiPromptBar.svelte';
 
   // Props
   export let card: Card;
@@ -21,7 +20,6 @@
   // Local state
   let editorContent = card.content;
   let cardElement: HTMLElement;
-  let isAiStreaming = false;
 
   // Sync editor content if card prop updates from outside (e.g. backend tool refresh)
   $: if (card.content !== editorContent) {
@@ -77,23 +75,6 @@
     cardStore.updateCardContent(card.id, content);
   }
 
-  // Handle AI response chunks
-  function handleAiChunk(chunk: string) {
-    // If starting a new stream, REPLACE content instead of appending
-    if (!isAiStreaming) {
-      isAiStreaming = true;
-      editorContent = chunk;
-      cardStore.updateCardContent(card.id, chunk);
-    } else {
-      editorContent += chunk;
-      cardStore.appendToCard(card.id, chunk);
-    }
-  }
-
-  function handleAiDone() {
-    isAiStreaming = false;
-  }
-
   // Handle keyboard shortcuts
   function handleKeydown(event: KeyboardEvent) {
     // Escape to exit edit mode
@@ -139,12 +120,6 @@
       <Editor
         content={editorContent}
         on:change={(e) => handleEditorChange(e.detail)}
-      />
-      <AiPromptBar
-        context={editorContent}
-        on:chunk={(e) => handleAiChunk(e.detail)}
-        on:done={handleAiDone}
-        on:error={handleAiDone}
       />
     </div>
   {/if}

@@ -2,15 +2,14 @@
 //!
 //! These commands are exposed to the frontend via the invoke() function.
 
-use crate::ai_manager::AiManager;
 use crate::assistant::{self, tools::ToolContext, AssistantContext, AssistantTurn, Decision, OllamaBackend};
 use crate::calendar::db::DbPool;
 use crate::card_manager::{self, Card};
 use crate::claude_mcp;
 use crate::hextime::HexTime;
-use crate::local_model::{self, LocalModelInfo};
-use crate::ollama;
-use crate::settings_manager::{GpuType, SettingsManager};
+use crate::http::HttpClient;
+use crate::ollama::{self, ModelInfo};
+use crate::settings_manager::SettingsManager;
 use crate::window_state::{WindowState};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
@@ -21,7 +20,7 @@ use tauri::{Manager, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalModelList {
-    pub models: Vec<LocalModelInfo>,
+    pub models: Vec<ModelInfo>,
     /// Whether a local Ollama server answered
     pub ollama_available: bool,
 }
@@ -49,23 +48,16 @@ impl From<&str> for CommandError {
 // Model Selection Commands
 // ============================================================================
 
-/// List models downloaded by the app and models installed in Ollama
+/// List the models installed in Ollama
 #[tauri::command]
-pub async fn list_local_models(ai_manager: State<'_, AiManager>) -> Result<LocalModelList, String> {
-    let mut models = local_model::list_app_models().map_err(|e| e.to_string())?;
-
-    let ollama_available = match ollama::list_models(ai_manager.client()).await {
-        Ok(ollama_models) => {
-            models.extend(ollama_models);
-            true
-        }
+pub async fn list_local_models(http: State<'_, HttpClient>) -> Result<LocalModelList, String> {
+    match ollama::list_models(http.client()).await {
+        Ok(models) => Ok(LocalModelList { models, ollama_available: true }),
         Err(e) => {
             log::info!("Ollama models not listed: {}", e);
-            false
+            Ok(LocalModelList { models: Vec::new(), ollama_available: false })
         }
-    };
-
-    Ok(LocalModelList { models, ollama_available })
+    }
 }
 
 /// Get the selected model id
@@ -76,39 +68,18 @@ pub async fn get_active_model(
     Ok(settings.get_active_model())
 }
 
-/// Select the model used for AI writing (None clears the selection)
+/// Select the Ollama model the assistant uses (None clears the selection)
 #[tauri::command]
 pub async fn set_active_model(
     model_id: Option<String>,
     settings: State<'_, std::sync::Arc<SettingsManager>>,
 ) -> Result<(), String> {
     if let Some(id) = &model_id {
-        if !id.starts_with(local_model::APP_PREFIX) && !id.starts_with(local_model::OLLAMA_PREFIX) {
+        if !id.starts_with(ollama::OLLAMA_PREFIX) {
             return Err(format!("Invalid model id: {}", id));
         }
     }
     settings.set_active_model(model_id).map_err(|e| e.to_string())
-}
-
-// ============================================================================
-// AI Streaming Commands
-// ============================================================================
-
-/// Invoke AI with streaming response
-/// Results are emitted as 'ai-stream-chunk' events
-#[tauri::command]
-pub async fn invoke_ai_stream(
-    prompt: String,
-    context: String,
-    app: tauri::AppHandle,
-    ai_manager: State<'_, AiManager>,
-) -> Result<(), String> {
-    ai_manager
-        .invoke_stream(&app, &prompt, &context)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
 }
 
 // ============================================================================
@@ -174,65 +145,24 @@ pub async fn save_orb_window_position(x: i32, y: i32) -> Result<(), String> {
 }
 
 // ============================================================================
-// Settings Commands
+// Model Download Commands
 // ============================================================================
 
-/// Get all application settings (model configurations, etc.)
+/// Pull a model from the Ollama library into Ollama
+/// Progress is emitted as 'model-pull-progress' events; returns the model id
 #[tauri::command]
-pub async fn get_all_settings(
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<serde_json::Value, String> {
-    let app_settings = settings.get_all_settings();
-    serde_json::to_value(app_settings).map_err(|e| e.to_string())
-}
-
-/// Set GPU acceleration type
-#[tauri::command]
-pub async fn set_gpu_type(
-    gpu_type: String,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    let gpu = GpuType::from_str(&gpu_type);
-    settings.set_gpu_type(gpu).map_err(|e| e.to_string())
-}
-
-// ============================================================================
-// Local Model Commands
-// ============================================================================
-
-/// Download a model from the Ollama library (or another Ollama-compatible registry)
-/// Progress is emitted as 'local-model-download-progress' events
-/// Completion is emitted as 'local-model-download-complete' event
-/// Returns the new model id
-#[tauri::command]
-pub async fn download_model(
+pub async fn pull_model(
     name: String,
     app: tauri::AppHandle,
-    ai_manager: State<'_, AiManager>,
+    http: State<'_, HttpClient>,
 ) -> Result<String, String> {
-    local_model::download_model(&app, ai_manager.client(), &name)
-        .await
-        .map_err(|e| e.to_string())
+    ollama::pull_model(&app, http.client(), &name).await.map_err(|e| e.to_string())
 }
 
-/// Cancel the running model download
+/// Cancel the running model pull
 #[tauri::command]
-pub async fn cancel_model_download() -> Result<(), String> {
-    local_model::cancel_download();
-    Ok(())
-}
-
-/// Delete a model downloaded by the app (Ollama models are managed by Ollama)
-#[tauri::command]
-pub async fn delete_local_model(
-    model_id: String,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    local_model::delete_app_model(&model_id).map_err(|e| e.to_string())?;
-
-    if settings.get_active_model().as_deref() == Some(model_id.as_str()) {
-        settings.set_active_model(None).map_err(|e| e.to_string())?;
-    }
+pub async fn cancel_model_pull() -> Result<(), String> {
+    ollama::cancel_pull();
     Ok(())
 }
 
@@ -279,16 +209,16 @@ pub async fn assistant_send(
     messages: Vec<serde_json::Value>,
     context: Option<AssistantContext>,
     app: tauri::AppHandle,
-    ai_manager: State<'_, AiManager>,
+    http: State<'_, HttpClient>,
     settings: State<'_, std::sync::Arc<SettingsManager>>,
     hextime: State<'_, HexTime>,
 ) -> Result<AssistantTurn, String> {
-    let backend = OllamaBackend::new(ai_manager.client(), &settings).await.map_err(|e| e.to_string())?;
+    let backend = OllamaBackend::new(http.client(), &settings).await.map_err(|e| e.to_string())?;
     let calendar = app.try_state::<DbPool>();
     let ctx = ToolContext {
         calendar: calendar.as_ref().map(|db| db.inner()),
         hextime: &hextime,
-        client: ai_manager.client(),
+        client: http.client(),
     };
     assistant::send(&backend, &ctx, &context.unwrap_or_default(), messages).await.map_err(|e| e.to_string())
 }
@@ -300,16 +230,16 @@ pub async fn assistant_confirm(
     context: Option<AssistantContext>,
     decisions: Vec<Decision>,
     app: tauri::AppHandle,
-    ai_manager: State<'_, AiManager>,
+    http: State<'_, HttpClient>,
     settings: State<'_, std::sync::Arc<SettingsManager>>,
     hextime: State<'_, HexTime>,
 ) -> Result<AssistantTurn, String> {
-    let backend = OllamaBackend::new(ai_manager.client(), &settings).await.map_err(|e| e.to_string())?;
+    let backend = OllamaBackend::new(http.client(), &settings).await.map_err(|e| e.to_string())?;
     let calendar = app.try_state::<DbPool>();
     let ctx = ToolContext {
         calendar: calendar.as_ref().map(|db| db.inner()),
         hextime: &hextime,
-        client: ai_manager.client(),
+        client: http.client(),
     };
     assistant::confirm(&backend, &ctx, &context.unwrap_or_default(), messages, decisions).await.map_err(|e| e.to_string())
 }
@@ -322,10 +252,10 @@ pub async fn assistant_confirm(
 #[tauri::command]
 pub async fn hextime_start(
     hextime: State<'_, HexTime>,
-    ai_manager: State<'_, AiManager>,
+    http: State<'_, HttpClient>,
 ) -> Result<String, String> {
     hextime
-        .start(ai_manager.client())
+        .start(http.client())
         .await
         .map_err(|e| e.to_string())
 }
