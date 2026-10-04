@@ -1,9 +1,10 @@
 //! HexStickyNote - Next-Gen AI Workspace Backend
 //!
 //! This library provides the Rust backend for the HexStickyNote application,
-//! including note storage, local AI inference and Claude Desktop MCP setup.
+//! including note storage, the calendar, local AI inference and Claude Desktop MCP setup.
 
 pub mod ai_manager;
+pub mod calendar;
 pub mod card_manager;
 pub mod claude_mcp;
 pub mod commands;
