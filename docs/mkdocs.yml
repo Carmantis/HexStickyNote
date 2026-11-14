@@ -1,0 +1,59 @@
+site_name: 'HexStickyNote'
+site_description: 'HexStickyNote: sticky notes, a calendar and time tracking with a local AI assistant'
+
+theme:
+  name: 'material'
+  language: 'en'
+  palette:
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Light theme
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Dark theme
+
+markdown_extensions:
+  # Footnotes
+  - footnotes
+  # Tables
+  - tables
+  # Code blocks
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  # Emojis
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  # Checkboxes
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  # Admonitions
+  - admonition
+  - pymdownx.details
+  # Mermaid diagrams in ```mermaid blocks
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+# --strict then also fails on a link to a heading that does not exist.
+validation:
+  anchors: warn
+
+plugins:
+  # Navigation page ordering (.nav.yml)
+  - awesome-nav
+  - search
+
+copyright: |
+  HexStickyNote, 2026.

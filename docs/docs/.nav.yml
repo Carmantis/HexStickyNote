@@ -1,0 +1,11 @@
+nav:
+  - Overview: index.md
+  - Using HexStickyNote: Usage.md
+  - AI assistant: Assistant.md
+  - Claude Desktop: Claude-Desktop.md
+  - Time tracking: Time-tracking.md
+  - Architecture: architecture.md
+  - Development and testing: Run.md
+  - Building and installing: Install.md
+  - HexTime: hextime
+  - These pages: documentation.md
