@@ -1,6 +1,6 @@
 import fs from "fs";
 import { DatabaseSync } from "node:sqlite";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
 import { getCalendarDatabasePath } from "./paths.js";
 
 // Calendar events in HexStickyNote's calendar (HexCalendar's SQLite database).
@@ -144,7 +144,7 @@ export function createEvent(event: NewEvent): EventSummary {
   }
 
   const row: EventRow = {
-    id: uuidv4(),
+    id: randomUUID(),
     title,
     description: event.description?.trim() || null,
     start_ts: start,

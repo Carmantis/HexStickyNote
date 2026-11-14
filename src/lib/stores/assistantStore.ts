@@ -20,6 +20,8 @@ export interface PendingAction {
   tool: string;
   arguments: unknown;
   summary: string;
+  /** The full text the action will save (note content, event description) */
+  details: string | null;
 }
 
 export interface ActionRecord {

@@ -328,6 +328,10 @@ fn move_folder(root: &Path, from: &str, to: &str) -> Result<String, String> {
     if from.is_empty() || to.is_empty() {
         return Err("Folder name is empty".to_string());
     }
+    // Only an existing folder, never a path such as "../somewhere"
+    if !folders_in(root)?.iter().any(|f| f == from) {
+        return Err(format!("Folder “{}” not found", from));
+    }
     let (old_path, new_path) = (root.join(from), root.join(&to));
     if !old_path.is_dir() {
         return Err(format!("Folder “{}” not found", from));
@@ -549,6 +553,7 @@ mod tests {
         make_folder(&root, "Ideas").unwrap();
         assert_eq!(folders_in(&root).unwrap(), ["Ideas", "Work-Home"]);
         assert!(move_folder(&root, "Ideas", "Work-Home").is_err());
+        assert!(move_folder(&root, "../Ideas", "Elsewhere").is_err());
         assert_eq!(move_folder(&root, "Ideas", "Later").unwrap(), "Later");
 
         write_card(&root, &card("a", "# Plan", "")).unwrap();

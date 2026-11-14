@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import yaml from "js-yaml";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
 import { Card, CardMetadata } from "./types.js";
 import { getCardsDirectory } from "./paths.js";
 
@@ -88,7 +88,7 @@ async function getUniquePath(dir: string, baseName: string, keep?: string): Prom
     const numbered = path.join(dir, `${baseName} (${counter}).md`);
     if (await isFree(numbered)) return numbered;
   }
-  return path.join(dir, `${uuidv4()}.md`);
+  return path.join(dir, `${randomUUID()}.md`);
 }
 
 // A folder name as it is used on disk; "" stands for the cards directory itself
@@ -196,7 +196,7 @@ async function ensureCardsDirectory(): Promise<string> {
 export async function createCard(content: string, folder?: string): Promise<Card> {
   const now = Math.floor(Date.now() / 1000);
   const card: Card = {
-    id: uuidv4(),
+    id: randomUUID(),
     content,
     created_at: now,
     updated_at: now,

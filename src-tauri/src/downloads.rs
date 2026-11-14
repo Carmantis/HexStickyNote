@@ -12,7 +12,10 @@ use directories::UserDirs;
 use std::path::{Path, PathBuf};
 use tauri::webview::WebviewWindowBuilder;
 use tauri::{App, AppHandle};
+use tauri::webview::NewWindowResponse;
+use tauri::Url;
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_shell::ShellExt;
 
 const HEXTIME_BRIDGE: &str = r#"
 (function () {
@@ -54,11 +57,60 @@ pub fn create_main_window(app: &App) -> tauri::Result<()> {
         .cloned()
         .expect("tauri.conf.json defines the main window");
 
+    let handle = app.handle().clone();
+    let popup_handle = app.handle().clone();
     WebviewWindowBuilder::from_config(app, &config)?
         .initialization_script_for_all_frames(HEXTIME_BRIDGE)
+        // A link in a note, an assistant answer or HexTime must not replace
+        // the app with a web page: web links open in the browser instead.
+        .on_navigation(move |url| follow_link(&handle, url))
+        .on_new_window(move |url, _features| {
+            follow_link(&popup_handle, &url);
+            NewWindowResponse::Deny
+        })
         .build()?;
 
     Ok(())
+}
+
+/// What to do when the main window is asked to load `url`
+#[derive(Debug, PartialEq)]
+enum LinkTarget {
+    /// The app's own pages, or the HexTime server shown in the Time tab
+    App,
+    /// A web page: open it in the user's browser
+    Browser,
+    /// Anything else (file:, other schemes): ignore it
+    Blocked,
+}
+
+fn link_target(url: &Url) -> LinkTarget {
+    match (url.scheme(), url.host_str()) {
+        ("tauri", _) | ("about", _) => LinkTarget::App,
+        // tauri.localhost: the app on Windows; localhost: the dev server;
+        // 127.0.0.1: HexTime (the sidecar binds only there)
+        ("http" | "https", Some("tauri.localhost" | "localhost" | "127.0.0.1")) => LinkTarget::App,
+        ("http" | "https", Some(_)) => LinkTarget::Browser,
+        _ => LinkTarget::Blocked,
+    }
+}
+
+/// Navigation handler: true lets the webview load `url`
+fn follow_link(app: &AppHandle, url: &Url) -> bool {
+    match link_target(url) {
+        LinkTarget::App => true,
+        LinkTarget::Browser => {
+            #[allow(deprecated)] // tauri-plugin-opener would be a new dependency
+            if let Err(e) = app.shell().open(url.as_str(), None) {
+                log::warn!("Could not open {} in the browser: {}", url, e);
+            }
+            false
+        }
+        LinkTarget::Blocked => {
+            log::warn!("Blocked navigation to {}", url);
+            false
+        }
+    }
 }
 
 /// The file name part of `requested`, if it names a PDF
@@ -129,6 +181,20 @@ pub fn save_pdf(app: &AppHandle, filename: &str, bytes: &[u8]) -> Result<PathBuf
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_the_app_in_the_window_and_web_pages_out() {
+        let target = |url: &str| link_target(&Url::parse(url).unwrap());
+        assert_eq!(target("tauri://localhost/"), LinkTarget::App);
+        assert_eq!(target("http://tauri.localhost/orb"), LinkTarget::App);
+        assert_eq!(target("http://localhost:5173/"), LinkTarget::App);
+        assert_eq!(target("http://127.0.0.1:47613/#/reports"), LinkTarget::App);
+        assert_eq!(target("about:blank"), LinkTarget::App);
+        assert_eq!(target("https://example.com/login"), LinkTarget::Browser);
+        assert_eq!(target("http://127.0.0.1.evil.example/"), LinkTarget::Browser);
+        assert_eq!(target("file:///etc/passwd"), LinkTarget::Blocked);
+        assert_eq!(target("mailto:someone@example.com"), LinkTarget::Blocked);
+    }
 
     #[test]
     fn keeps_only_the_name_of_a_pdf() {

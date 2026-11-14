@@ -154,6 +154,13 @@
       <div class="confirm-card">
         <p class="confirm-label">Confirm change</p>
         <p class="confirm-summary">{action.summary}</p>
+        {#if action.details}
+          <!-- Plain text, exactly as it will be saved -->
+          <p class="confirm-details-label">
+            {action.tool === 'update_note' ? 'New content' : action.tool === 'create_event' ? 'Description' : 'Content'}
+          </p>
+          <pre class="confirm-details">{action.details}</pre>
+        {/if}
         {#if state.decisions[i] === null}
           <div class="confirm-buttons">
             <button class="approve" on:click={() => assistantStore.decide(i, true, context)} disabled={state.isBusy}>
@@ -399,6 +406,29 @@
     margin: 0.25rem 0 0.6rem;
     font-size: 0.875rem;
     color: var(--text-primary);
+  }
+
+  .confirm-details-label {
+    margin-top: -0.25rem;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+
+  .confirm-details {
+    max-height: 9rem;
+    overflow: auto;
+    margin: 0.25rem 0 0.6rem;
+    padding: 0.5rem 0.6rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
   }
 
   .confirm-buttons {
