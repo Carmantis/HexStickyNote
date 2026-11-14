@@ -2,14 +2,18 @@
   /**
    * Card Carousel - 3D rotating carousel display
    *
-   * Shows cards in a 3D carousel with navigation arrows.
-   * Center card is highlighted and larger.
+   * The cards stand on a ring seen slightly from above. Every card faces the
+   * viewer; depth comes from perspective, so the cards behind the front one
+   * show smaller, blurred and see-through. Only the front card is sharp and
+   * can be opened; clicking another card turns the ring to it.
    */
 
   import { cardStore, editingCard, visibleCards, type Card } from "$lib/stores/cardStore";
   import NoteCard from "./Card.svelte";
   import NoteGrid from "./NoteGrid.svelte";
   import { onMount, tick } from "svelte";
+  import { tweened } from "svelte/motion";
+  import { cubicIn, cubicOut } from "svelte/easing";
 
   $: cards = $visibleCards;
   $: isLoading = $cardStore.isLoading;
@@ -26,13 +30,18 @@
 
   /** What is on screen; follows the store's layout through the animations */
   let shown: "carousel" | "grid" = $cardStore.layout;
-  /** Carousel cards pulled into the middle (before the grid / when coming back) */
-  let folded = false;
   /** Grid tiles flying back into the middle */
   let gridLeaving = false;
-  /** Switch off transitions for one frame while the carousel jumps */
-  let instant = false;
   let switching = false;
+
+  /** Ring angle shown on screen, easing towards `rotation` (degrees) */
+  const spin = tweened(0, { duration: 600, easing: cubicOut });
+  /** 0 = ring spread out, 1 = cards pulled into the middle (grid transition) */
+  const fold = tweened(0, { duration: FOLD_MS, easing: cubicIn });
+
+  /** Size of the area the ring is drawn in */
+  let viewWidth = 900;
+  let viewHeight = 700;
 
   $: wanted = $cardStore.layout;
   $: if (wanted !== shown && !switching) switchLayout(wanted);
@@ -40,7 +49,7 @@
   // Creating or opening a note while the grid is up goes straight to the editor
   $: if (editing && shown === "grid") {
     shown = "carousel";
-    folded = false;
+    fold.set(0, { duration: 0 });
     gridLeaving = false;
     cardStore.setLayout("carousel");
   }
@@ -52,11 +61,10 @@
     switching = true;
     try {
       if (target === "grid") {
-        folded = true;
-        await wait(FOLD_MS);
+        await fold.set(1);
         // A note was opened for editing meanwhile: stay in the carousel
         if (editing || $cardStore.layout !== "grid") {
-          folded = false;
+          fold.set(0, { duration: 0 });
           return;
         }
         shown = "grid";
@@ -66,15 +74,12 @@
         gridLeaving = false;
 
         // Put the picked card in front without spinning there, then unfold
-        instant = true;
-        folded = true;
+        await fold.set(1, { duration: 0 });
         focusPickedCard();
         shown = "carousel";
         await tick();
         await nextFrame();
-        instant = false;
-        await nextFrame();
-        folded = false;
+        await fold.set(0, { duration: 480, easing: cubicOut });
       }
     } finally {
       // A layout toggled again during the animation is picked up by `$: if (wanted ...)`
@@ -89,16 +94,58 @@
     const index = cards.findIndex((c) => c.id === id);
     if (index !== -1) {
       currentIndex = index;
-      rotation = -index * angleIncrement;
+      setRotation(-index * angleIncrement, true);
     }
+  }
+
+  function setRotation(value: number, instant = false) {
+    rotation = value;
+    spin.set(value, instant ? { duration: 0 } : undefined);
   }
 
   // Calculate rotation angle based on number of cards
   $: angleIncrement = cards.length > 0 ? 360 / cards.length : 120;
 
-  // Dynamic radius: Expands as more cards are added to prevent overlap
-  // Increased to 500px to spread cards more to the sides
-  $: radius = Math.max(500, cards.length * 35);
+  // ---- Ring geometry (px) -------------------------------------------------
+  const PERSPECTIVE = 1100;
+  $: cardWidth = Math.round(Math.min(520, Math.max(220, viewWidth * 0.36)));
+  $: cardHeight = Math.round(Math.min(500, Math.max(160, viewHeight - 170)));
+  /** Half-width of the ring; the side cards stay inside the view */
+  $: radiusX = Math.min(viewWidth * 0.33, cardWidth * 1.2);
+  /** Depth of the ring: the back card is this far behind the front one, twice */
+  $: radiusZ = radiusX * 1.35;
+  /** How much higher the back of the ring is, as if seen from above */
+  $: lift = cardHeight * 0.42;
+
+  interface Placement {
+    transform: string;
+    opacity: number;
+    filter: string;
+    zIndex: number;
+  }
+
+  /** Where card `i` is on the ring when the ring is turned to `angle` */
+  function place(i: number, angle: number, folded: number, active: boolean): Placement {
+    const theta = ((i * angleIncrement + angle) * Math.PI) / 180;
+    const depth = (1 - Math.cos(theta)) / 2; // 0 = front, 1 = back
+    const spread = 1 - folded;
+
+    const x = radiusX * Math.sin(theta) * spread;
+    const y = (-lift * depth + lift * 0.3) * spread;
+    const z = -2 * radiusZ * depth * spread;
+    const scale = 1 - 0.75 * folded;
+
+    const front = active && depth < 0.02;
+    const opacity = (front ? 1 : Math.max(0.15, 0.5 - 0.35 * depth)) * spread;
+    const blur = front ? 0 : 3.5 + 4 * depth;
+
+    return {
+      transform: `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) scale(${scale.toFixed(3)})`,
+      opacity,
+      filter: front ? "none" : `blur(${blur.toFixed(1)}px) grayscale(${Math.round(35 * depth + 15)}%)`,
+      zIndex: Math.round((1 - depth) * 1000),
+    };
+  }
 
   // Watch for edit mode changes and card count changes to maintain alignment
   $: {
@@ -138,26 +185,31 @@
       if (shouldRecalculate) {
         currentIndex = targetIndex;
         // Snap rotation to align the current card perfectly
-        rotation = -currentIndex * angleIncrement;
+        setRotation(-currentIndex * angleIncrement);
       }
     }
   }
 
-  // backface-visibility is ignored by WebKitGTK (Linux) on elements with a CSS
-  // filter, so cards turned away from the viewer are hidden explicitly.
-  function isFacingAway(angle: number): boolean {
-    const normalized = ((((angle % 360) + 540) % 360) - 180);
-    return Math.abs(normalized) > 90;
+  function rotateCarousel(direction: "next" | "prev") {
+    turnTo(direction === "next" ? currentIndex + 1 : currentIndex - 1);
   }
 
-  function rotateCarousel(direction: "next" | "prev") {
-    if (direction === "next") {
-      currentIndex = (currentIndex + 1) % cards.length;
-      rotation -= angleIncrement;
-    } else {
-      currentIndex = currentIndex === 0 ? cards.length - 1 : currentIndex - 1;
-      rotation += angleIncrement;
-    }
+  /** Turn the ring the short way round so that card `index` is in front */
+  function turnTo(index: number) {
+    const n = cards.length;
+    if (n === 0) return;
+    let steps = (((index - currentIndex) % n) + n) % n;
+    if (steps > n / 2) steps -= n;
+    currentIndex = (((index % n) + n) % n);
+    setRotation(rotation - steps * angleIncrement);
+  }
+
+  /** A card behind the front one is not opened by a click; the ring turns to it */
+  function handleItemClick(event: MouseEvent, index: number) {
+    if (index === currentIndex) return;
+    event.stopPropagation();
+    event.preventDefault();
+    turnTo(index);
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -213,7 +265,7 @@
   {:else if shown === "grid"}
     <NoteGrid {cards} leaving={gridLeaving} />
   {:else}
-    <div class="carousel-3d" class:folded class:instant>
+    <div class="carousel-3d" class:folded={$fold > 0.5}>
       <!-- Navigation Arrows -->
       <button
         class="nav-arrow nav-arrow-left"
@@ -235,22 +287,23 @@
 
       <!-- 3D Carousel Container -->
       {#if !editing}
-        <div class="carousel-viewport">
-          <!-- Each card gets its final angle (stage rotation folded in) instead of
-               rotating the stage: WebKitGTK culls a card whose own rotation is exactly
-               90°/270°, which made every other card vanish on Linux. -->
+        <div
+          class="carousel-viewport"
+          bind:clientWidth={viewWidth}
+          bind:clientHeight={viewHeight}
+          style="perspective: {PERSPECTIVE}px"
+        >
+          <!-- Cards are only moved, never turned: WebKitGTK mirrors or culls cards
+               rotated away from the viewer, so every card faces the front. -->
           <div class="carousel-stage">
             {#each cards as card, i (card.id)}
+              {@const at = place(i, $spin, $fold, i === currentIndex)}
+              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
               <div
                 class="carousel-item"
                 class:active={i === currentIndex}
-                class:behind={isFacingAway(i * angleIncrement + rotation)}
-                style="transform: rotateY({i * angleIncrement +
-                  rotation}deg) translateZ({folded ? 0 : radius}px) scale({folded
-                  ? 0.25
-                  : i === currentIndex
-                    ? 1.05
-                    : 1}); {i === currentIndex ? '--card-bg: rgb(18, 18, 26); --card-backdrop: none;' : ''}"
+                on:click|capture={(e) => handleItemClick(e, i)}
+                style="width: {cardWidth}px; height: {cardHeight}px; transform: {at.transform}; opacity: {at.opacity}; filter: {at.filter}; z-index: {at.zIndex};"
               >
                 <NoteCard {card} />
               </div>
@@ -291,11 +344,7 @@
             <button
               class="indicator"
               class:active={i === currentIndex}
-              on:click={() => {
-                const diff = i - currentIndex;
-                rotation -= diff * angleIncrement;
-                currentIndex = i;
-              }}
+              on:click={() => turnTo(i)}
               title={`Card ${i + 1}`}
             />
           {/each}
@@ -386,65 +435,24 @@
 
   .carousel-item {
     position: absolute;
-    /* Sizes account for ~1.6x perspective magnification (perspective 1200px, translateZ ~450px) */
-    width: clamp(200px, 35vw, 550px);
-    /* Also fits the space left when the assistant box is open */
-    height: clamp(160px, min(calc(50vh - 3rem), calc(100% - 6rem)), 500px);
     left: 50%;
     top: 50%;
-    /* Remove preserve-3d to flatten the card and its contents into a single plane,
-       which fixes transparency issues where background cards bleed through the content area. */
-    transform-style: flat;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
+    /* Size, place, opacity and blur are set per card from the ring geometry */
     translate: -50% -50%;
-    transition:
-      opacity 0.4s ease,
-      visibility 0.4s,
-      transform 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-      filter 0.4s ease;
-    opacity: 0.3;
-    filter: blur(5px) grayscale(40%);
-    pointer-events: none; /* Prevent clicking background cards */
+    transform-style: flat;
+    will-change: transform, opacity, filter;
+    pointer-events: auto;
+    cursor: pointer;
   }
 
-  /* Folding into the grid: cards pull into the middle and fade */
-  .folded .carousel-item {
-    opacity: 0 !important;
-    transition:
-      opacity 0.32s ease-in,
-      visibility 0.32s,
-      transform 0.38s cubic-bezier(0.55, 0, 0.75, 0.3),
-      filter 0.3s ease;
-  }
-
+  /* Hide the grid transition's half-way state from the arrows and dots */
   .folded .nav-arrow,
   .folded .carousel-indicators {
     opacity: 0 !important;
     pointer-events: none;
   }
 
-  .instant .carousel-item,
-  .instant .nav-arrow,
-  .instant .carousel-indicators {
-    transition: none !important;
-  }
-
-  .carousel-item.behind {
-    opacity: 0;
-    visibility: hidden;
-  }
-
-  .carousel-item.active {
-    opacity: 1;
-    filter: none;
-    z-index: 100;
-    pointer-events: auto;
-    /* Ensure the active card is pushed forward to definitely clear the background cards */
-    transform: translateZ(5px);
-  }
-
-  /* Make the active card more solid for readability - completely opaque */
+  /* The front card is solid and readable */
   .carousel-item.active :global(.card) {
     background: #12121a !important;
     backdrop-filter: none !important;
@@ -452,6 +460,12 @@
     border-color: var(--accent-primary);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
     transform: translateZ(0);
+  }
+
+  /* Cards behind it must not react like the front one */
+  .carousel-item:not(.active) :global(.card:hover) {
+    transform: translateZ(0);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .carousel-item :global(.card) {
