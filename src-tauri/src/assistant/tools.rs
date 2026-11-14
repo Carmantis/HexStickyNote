@@ -97,7 +97,7 @@ const TOOLS: &[ToolSpec] = &[
     ToolSpec {
         name: "list_notes",
         kind: ToolKind::Read,
-        description: "List all sticky notes with their id, title and last update date.",
+        description: "List all sticky notes with their id, title, folder and last update date.",
         parameters: no_parameters,
     },
     ToolSpec {
@@ -119,7 +119,10 @@ const TOOLS: &[ToolSpec] = &[
         parameters: || {
             json!({
                 "type": "object",
-                "properties": { "content": { "type": "string" } },
+                "properties": {
+                    "content": { "type": "string" },
+                    "folder": { "type": "string", "description": "Optional folder name, as shown by list_notes" }
+                },
                 "required": ["content"]
             })
         },
@@ -235,6 +238,8 @@ struct ReadNoteArgs {
 #[derive(Deserialize)]
 struct CreateNoteArgs {
     content: String,
+    #[serde(default)]
+    folder: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -347,7 +352,11 @@ pub fn describe(name: &str, arguments: &Value) -> Result<String, ToolError> {
         }
         "create_note" => {
             let a = args::<CreateNoteArgs>(arguments)?;
-            Ok(format!("Create note “{}”", card_manager::extract_title_from_content(&a.content)))
+            let title = card_manager::extract_title_from_content(&a.content);
+            match a.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+                Some(folder) => Ok(format!("Create note “{}” in folder “{}”", title, folder)),
+                None => Ok(format!("Create note “{}”", title)),
+            }
         }
         "update_note" => {
             let a = args::<UpdateNoteArgs>(arguments)?;
@@ -495,6 +504,7 @@ pub async fn execute(ctx: &ToolContext<'_>, name: &str, arguments: &Value) -> Re
                     json!({
                         "id": c.id,
                         "title": card_manager::extract_title_from_content(&c.content),
+                        "folder": c.folder,
                         "updated": Local.timestamp_opt(c.updated_at, 0).single().map(|t| t.format("%Y-%m-%d").to_string()),
                     })
                 })
@@ -521,9 +531,14 @@ pub async fn execute(ctx: &ToolContext<'_>, name: &str, arguments: &Value) -> Re
             if a.content.trim().is_empty() {
                 return Err(ToolError::InvalidArguments("content is empty".to_string()));
             }
-            let card = card_manager::create_card(a.content).map_err(ToolError::Failed)?;
+            let card = card_manager::create_card(a.content, a.folder.as_deref().unwrap_or(""))
+                .map_err(ToolError::Failed)?;
             Ok(json!({
-                "created": { "id": card.id, "title": card_manager::extract_title_from_content(&card.content) }
+                "created": {
+                    "id": card.id,
+                    "title": card_manager::extract_title_from_content(&card.content),
+                    "folder": card.folder,
+                }
             }))
         }
         "list_time_entries" => {

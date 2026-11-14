@@ -13,6 +13,7 @@
   import CalendarView from "$lib/calendar/CalendarView.svelte";
   import HexTimeView from "./HexTimeView.svelte";
   import AssistantPanel from "./AssistantPanel.svelte";
+  import FolderMenu from "./FolderMenu.svelte";
 
   export let isOpen: boolean = false;
 
@@ -77,7 +78,7 @@
 
   function handleHeaderMouseDown(event: MouseEvent) {
     // Only drag on left click and if not clicking a button
-    if (event.button === 0 && !(event.target as Element).closest('button')) {
+    if (event.button === 0 && !(event.target as Element).closest('button, [data-no-drag]')) {
       getCurrentWindow().startDragging();
     }
   }
@@ -104,14 +105,6 @@
     }
   }
 
-  async function handleOpenCardsFolder() {
-    try {
-      await invoke('open_cards_directory');
-    } catch (e) {
-      console.error('Failed to open cards directory:', e);
-    }
-  }
-
   async function handleRefreshCards() {
     await cardStore.reloadCards();
   }
@@ -132,22 +125,7 @@
     <header class="hud-header" on:mousedown={handleHeaderMouseDown}>
       <div class="hud-left-actions">
         {#if view === "notes"}
-        <button
-          class="action-button"
-          on:click|stopPropagation={handleOpenCardsFolder}
-          title="Open Cards Folder"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
+        <FolderMenu />
 
         <button
           class="action-button"
@@ -340,7 +318,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1.5rem;
-    width: 600px;
+    width: min(680px, calc(100% - 3rem));
     margin: 1.5rem auto 0;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--border-radius);
@@ -352,6 +330,8 @@
     /* Sallitaan klikkaukset headeriin */
     pointer-events: auto;
     position: relative;
+    /* Above the notes and the assistant, so the folder menu opens over them */
+    z-index: 60;
     min-height: 60px;
     box-shadow: var(--shadow-md);
   }
@@ -388,7 +368,9 @@
 
   .hud-left-actions {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 0.25rem;
+    z-index: 2;
   }
 
   .view-tabs {

@@ -6,11 +6,11 @@
    * Center card is highlighted and larger.
    */
 
-  import { cardStore, editingCard, type Card } from "$lib/stores/cardStore";
+  import { cardStore, editingCard, visibleCards, type Card } from "$lib/stores/cardStore";
   import NoteCard from "./Card.svelte";
   import { onMount } from "svelte";
 
-  $: cards = $cardStore.cards;
+  $: cards = $visibleCards;
   $: isLoading = $cardStore.isLoading;
   $: editing = $editingCard;
 
@@ -128,8 +128,13 @@
           <path d="M8 12h8" />
         </svg>
       </div>
-      <h3>No notes yet</h3>
-      <p>Create your first note to get started</p>
+      {#if $cardStore.cards.length > 0}
+        <h3>No notes in this folder</h3>
+        <p>Create a note here, or pick another folder from the top bar</p>
+      {:else}
+        <h3>No notes yet</h3>
+        <p>Create your first note to get started</p>
+      {/if}
     </div>
   {:else}
     <div class="carousel-3d">

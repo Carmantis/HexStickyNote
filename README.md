@@ -11,7 +11,9 @@ A modern desktop workspace for sticky notes, a calendar and time tracking, with 
 - **AI Assistant**: Ask about your notes, events and tracked time, or ask it to create events, write notes or start the timer. Every change waits for your approval.
 - **Markdown Editor**: Full-featured CodeMirror 6 editor with syntax highlighting and live preview.
 - **Claude Desktop Integration**: Built-in **MCP (Model Context Protocol)** server that allows Claude Desktop to read and manage your notes.
-- **Portable Data**: Notes are stored as human-readable `.md` files with YAML metadata.
+- **Folders**: Sort notes into folders and switch between them from the folder menu in the top bar.
+- **Portable Data**: Notes are stored as human-readable `.md` files with YAML metadata; each folder is a
+  subdirectory of the notes directory.
 
 ## Calendar and Time Tracking
 

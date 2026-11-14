@@ -88,8 +88,8 @@ pub async fn set_active_model(
 
 /// Create a new card
 #[tauri::command]
-pub async fn create_card(content: String) -> Result<Card, String> {
-    card_manager::create_card(content)
+pub async fn create_card(content: String, folder: Option<String>) -> Result<Card, String> {
+    card_manager::create_card(content, folder.as_deref().unwrap_or(""))
 }
 
 /// Get all cards
@@ -109,6 +109,34 @@ pub async fn save_card(card: Card) -> Result<(), String> {
 #[tauri::command]
 pub async fn delete_card(id: String) -> Result<(), String> {
     card_manager::delete_card(&id)
+}
+
+/// Move a card to another folder (empty for none)
+#[tauri::command]
+pub async fn move_card(id: String, folder: String) -> Result<Card, String> {
+    card_manager::move_card(&id, &folder)
+}
+
+/// Folder names, including empty folders
+#[tauri::command]
+pub async fn list_folders() -> Result<Vec<String>, String> {
+    card_manager::list_folders()
+}
+
+#[tauri::command]
+pub async fn create_folder(name: String) -> Result<String, String> {
+    card_manager::create_folder(&name)
+}
+
+#[tauri::command]
+pub async fn rename_folder(from: String, to: String) -> Result<String, String> {
+    card_manager::rename_folder(&from, &to)
+}
+
+/// Delete a folder; its notes move out of it and are kept
+#[tauri::command]
+pub async fn delete_folder(name: String) -> Result<(), String> {
+    card_manager::delete_folder(&name)
 }
 
 /// Reload all cards from file system

@@ -22,6 +22,37 @@ export interface Card {
   created_at: number;
   /** Unix timestamp in seconds (as stored by the backend) */
   updated_at: number;
+  /** Folder (subdirectory) the note is stored in; "" for none */
+  folder: string;
+}
+
+/** `null` shows the notes of every folder */
+export type FolderFilter = string | null;
+
+/** The notes outside any folder */
+export const NO_FOLDER = '';
+
+const FOLDER_KEY = 'hexstickynote.folder';
+
+function loadFolderFilter(): FolderFilter {
+  try {
+    return localStorage.getItem(FOLDER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveFolderFilter(folder: FolderFilter) {
+  try {
+    if (folder === null) localStorage.removeItem(FOLDER_KEY);
+    else localStorage.setItem(FOLDER_KEY, folder);
+  } catch {
+    // Not remembered; the filter still applies
+  }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function nowSeconds(): number {
@@ -32,6 +63,10 @@ export type CardMode = 'view' | 'edit';
 
 interface CardState {
   cards: Card[];
+  /** Folder names, including empty folders */
+  folders: string[];
+  /** Folder whose notes the carousel shows */
+  folder: FolderFilter;
   editingCardId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -44,10 +79,37 @@ interface CardState {
 function createCardStore() {
   const { subscribe, set, update } = writable<CardState>({
     cards: [],
+    folders: [],
+    folder: typeof window !== 'undefined' ? loadFolderFilter() : null,
     editingCardId: null,
     isLoading: false,
     error: null
   });
+
+  /** Set the folder list; a filter on a folder that is gone falls back to all notes */
+  function withFolders(s: CardState, folders: string[]): CardState {
+    const folder = s.folder && !folders.includes(s.folder) ? null : s.folder;
+    if (folder !== s.folder) saveFolderFilter(folder);
+    return { ...s, folders, folder };
+  }
+
+  async function refreshFolders() {
+    const folders = await invoke<string[]>('list_folders');
+    update(s => withFolders(s, folders));
+  }
+
+  /** Run a folder command, reloading the notes afterwards when they moved */
+  async function folderAction<T>(action: () => Promise<T>, reload: boolean): Promise<T | null> {
+    try {
+      const result = await action();
+      if (reload) await reloadCards(true);
+      else await refreshFolders();
+      return result;
+    } catch (error) {
+      update(s => ({ ...s, error: errorText(error) }));
+      return null;
+    }
+  }
 
   /**
    * Load all cards from the backend
@@ -56,8 +118,11 @@ function createCardStore() {
     update(s => ({ ...s, isLoading: true, error: null }));
 
     try {
-      const cards = await invoke<Card[]>('get_cards');
-      update(s => ({ ...s, cards, isLoading: false }));
+      const [cards, folders] = await Promise.all([
+        invoke<Card[]>('get_cards'),
+        invoke<string[]>('list_folders')
+      ]);
+      update(s => withFolders({ ...s, cards, isLoading: false }, folders));
     } catch (error) {
       update(s => ({
         ...s,
@@ -77,7 +142,8 @@ function createCardStore() {
 
     try {
       const cards = await invoke<Card[]>('reload_cards');
-      update(s => ({ ...s, cards, isLoading: false }));
+      const folders = await invoke<string[]>('list_folders');
+      update(s => withFolders({ ...s, cards, isLoading: false }, folders));
     } catch (error) {
       update(s => ({
         ...s,
@@ -118,8 +184,14 @@ function createCardStore() {
      * Create a new card
      */
     async createCard(content: string = ''): Promise<Card | null> {
+      let folder: FolderFilter = null;
+      update(s => {
+        folder = s.folder;
+        return s;
+      });
       try {
-        const card = await invoke<Card>('create_card', { content });
+        // New notes go into the folder being viewed
+        const card = await invoke<Card>('create_card', { content, folder });
         update(s => ({ ...s, cards: [...s.cards, card] }));
         return card;
       } catch (error) {
@@ -205,6 +277,55 @@ function createCardStore() {
       }
     },
 
+    /** Show the notes of one folder (`NO_FOLDER` for the ones outside folders) or all (`null`) */
+    selectFolder(folder: FolderFilter) {
+      saveFolderFilter(folder);
+      update(s => ({ ...s, folder }));
+    },
+
+    async createFolder(name: string): Promise<string | null> {
+      return folderAction(() => invoke<string>('create_folder', { name }), false);
+    },
+
+    async renameFolder(from: string, to: string): Promise<string | null> {
+      const name = await folderAction(() => invoke<string>('rename_folder', { from, to }), true);
+      if (name !== null) {
+        update(s => {
+          if (s.folder !== from) return s;
+          saveFolderFilter(name);
+          return { ...s, folder: name };
+        });
+      }
+      return name;
+    },
+
+    /** Delete a folder; its notes move out of it and are kept */
+    async deleteFolder(name: string): Promise<boolean> {
+      return (await folderAction(() => invoke('delete_folder', { name }), true)) !== null;
+    },
+
+    /** Move a note to another folder (`NO_FOLDER` for none) */
+    async moveCard(cardId: string, folder: string): Promise<boolean> {
+      let content: string | undefined;
+      update(s => {
+        content = s.cards.find(c => c.id === cardId)?.content;
+        return s;
+      });
+      try {
+        // Unsaved edits travel with the note
+        if (content !== undefined) {
+          await invoke('save_card', { card: { id: cardId, content, created_at: 0, updated_at: 0, folder } });
+        }
+        const moved = await invoke<Card>('move_card', { id: cardId, folder });
+        update(s => ({ ...s, cards: s.cards.map(c => (c.id === cardId ? moved : c)) }));
+        await refreshFolders();
+        return true;
+      } catch (error) {
+        update(s => ({ ...s, error: errorText(error) }));
+        return false;
+      }
+    },
+
     /**
      * Clear any errors
      */
@@ -220,6 +341,13 @@ export const cardStore = createCardStore();
 // ============================================================================
 // Derived Stores
 // ============================================================================
+
+/**
+ * The notes of the selected folder
+ */
+export const visibleCards = derived(cardStore, $store =>
+  $store.folder === null ? $store.cards : $store.cards.filter(c => c.folder === $store.folder)
+);
 
 /**
  * Get the currently edited card (if any)

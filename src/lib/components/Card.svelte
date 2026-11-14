@@ -61,8 +61,8 @@
 
   // Handle click outside -> exit edit mode
   function handleClickOutside(event: MouseEvent) {
-    // Chatting with the assistant about this note keeps it open
-    if ((event.target as Element | null)?.closest?.('.assistant-panel')) return;
+    // Chatting with the assistant or moving the note to a folder keeps it open
+    if ((event.target as Element | null)?.closest?.('.assistant-panel, .folder-menu')) return;
 
     if ($mode === 'edit' && cardElement && !cardElement.contains(event.target as Node)) {
       cardStore.exitEditMode(card.id);
@@ -78,7 +78,8 @@
   // Handle keyboard shortcuts
   function handleKeydown(event: KeyboardEvent) {
     // Escape to exit edit mode
-    if (event.key === 'Escape' && $mode === 'edit') {
+    // (Escape that closed a menu has been handled already)
+    if (event.key === 'Escape' && $mode === 'edit' && !event.defaultPrevented) {
       cardStore.exitEditMode(card.id);
     }
 

@@ -21,11 +21,15 @@ server.tool(
   "Create a new sticky note with markdown content in HexStickyNote",
   {
     content: z.string().describe("The markdown content for the new note"),
+    folder: z
+      .string()
+      .optional()
+      .describe("Optional folder to put the note in (see list_notes); created when missing"),
   },
-  async ({ content }) => {
+  async ({ content, folder }) => {
     try {
       console.error(`[DEBUG] Creating card with content: ${content.substring(0, 50)}...`);
-      const card = await createCard(content);
+      const card = await createCard(content, folder);
       console.error(`[DEBUG] Card created successfully: ${card.id}`);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(card, null, 2) }],
@@ -43,13 +47,14 @@ server.tool(
 
 server.tool(
   "list_notes",
-  "List all sticky notes in HexStickyNote with a preview of each note's content",
+  "List all sticky notes in HexStickyNote with their folder and a preview of each note's content",
   {},
   async () => {
     try {
       const cards = await listCards();
       const previews = cards.map((card) => ({
         id: card.id,
+        folder: card.folder,
         preview:
           card.content.slice(0, 200) +
           (card.content.length > 200 ? "..." : ""),

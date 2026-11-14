@@ -23571,38 +23571,60 @@ function sanitizeFilename(title) {
   }
   return sanitized;
 }
-async function getUniqueFilename(cardsDir, baseName) {
-  const filePath = path2.join(cardsDir, `${baseName}.md`);
+async function exists(filePath) {
   try {
     await fs.access(filePath);
-    let counter = 2;
-    while (counter < 1e3) {
-      const numberedName = `${baseName} (${counter})`;
-      const numberedPath = path2.join(cardsDir, `${numberedName}.md`);
-      try {
-        await fs.access(numberedPath);
-        counter++;
-      } catch {
-        return `${numberedName}.md`;
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function getUniquePath(dir, baseName, keep) {
+  const isFree = async (candidate) => candidate === keep || !await exists(candidate);
+  const plain = path2.join(dir, `${baseName}.md`);
+  if (await isFree(plain))
+    return plain;
+  for (let counter = 2; counter <= 1e3; counter++) {
+    const numbered = path2.join(dir, `${baseName} (${counter}).md`);
+    if (await isFree(numbered))
+      return numbered;
+  }
+  return path2.join(dir, `${v4_default()}.md`);
+}
+function cleanFolderName(name) {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed)
+    return "";
+  if (trimmed.startsWith(".")) {
+    throw new Error(`"${trimmed}" is not a valid folder name`);
+  }
+  return sanitizeFilename(trimmed);
+}
+async function noteFiles(cardsDir) {
+  const files = [];
+  const entries = await fs.readdir(cardsDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push({ folder: "", filePath: path2.join(cardsDir, entry.name) });
+    } else if (entry.isDirectory() && !entry.name.startsWith(".")) {
+      const folderDir = path2.join(cardsDir, entry.name);
+      for (const child2 of await fs.readdir(folderDir, { withFileTypes: true })) {
+        if (child2.isFile() && child2.name.endsWith(".md")) {
+          files.push({ folder: entry.name, filePath: path2.join(folderDir, child2.name) });
+        }
       }
     }
-    return `${v4_default()}.md`;
-  } catch {
-    return `${baseName}.md`;
   }
+  return files;
 }
 async function findFileByID(cardsDir, id) {
   try {
-    const entries = await fs.readdir(cardsDir);
-    for (const entry of entries) {
-      if (!entry.endsWith(".md"))
-        continue;
+    for (const file of await noteFiles(cardsDir)) {
       try {
-        const filePath = path2.join(cardsDir, entry);
-        const content = await fs.readFile(filePath, "utf-8");
+        const content = await fs.readFile(file.filePath, "utf-8");
         const { metadata } = parseMarkdownWithFrontmatter(content);
         if (metadata.id === id) {
-          return filePath;
+          return file;
         }
       } catch {
         continue;
@@ -23645,78 +23667,74 @@ async function ensureCardsDirectory() {
   await fs.mkdir(dir, { recursive: true });
   return dir;
 }
-async function createCard(content) {
+async function createCard(content, folder) {
   const now = Math.floor(Date.now() / 1e3);
   const card = {
     id: v4_default(),
     content,
     created_at: now,
-    updated_at: now
+    updated_at: now,
+    folder: cleanFolderName(folder)
   };
-  const dir = await ensureCardsDirectory();
-  const title = extractTitleFromContent(content);
-  const sanitized = sanitizeFilename(title);
-  const filename = await getUniqueFilename(dir, sanitized);
-  const filePath = path2.join(dir, filename);
+  const dir = path2.join(await ensureCardsDirectory(), card.folder);
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = await getUniquePath(dir, sanitizeFilename(extractTitleFromContent(content)));
   await fs.writeFile(filePath, createMarkdownWithFrontmatter(card), "utf-8");
   return card;
 }
 async function listCards() {
   const dir = await ensureCardsDirectory();
-  const entries = await fs.readdir(dir);
   const cards = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".md"))
-      continue;
+  for (const { folder, filePath } of await noteFiles(dir)) {
     try {
-      const filePath = path2.join(dir, entry);
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { metadata, content } = parseMarkdownWithFrontmatter(fileContent);
       cards.push({
         id: metadata.id,
         content,
         created_at: metadata.created_at,
-        updated_at: metadata.updated_at
+        updated_at: metadata.updated_at,
+        folder
       });
     } catch (err) {
-      console.error(`Failed to load card from ${entry}: ${err}`);
+      console.error(`Failed to load card from ${filePath}: ${err}`);
     }
   }
   return cards;
 }
 async function readCard(id) {
   const dir = await ensureCardsDirectory();
-  const filePath = await findFileByID(dir, id);
-  if (!filePath) {
+  const file = await findFileByID(dir, id);
+  if (!file) {
     throw new Error(`Card with ID ${id} not found`);
   }
-  const fileContent = await fs.readFile(filePath, "utf-8");
+  const fileContent = await fs.readFile(file.filePath, "utf-8");
   const { metadata, content } = parseMarkdownWithFrontmatter(fileContent);
   return {
     id: metadata.id,
     content,
     created_at: metadata.created_at,
-    updated_at: metadata.updated_at
+    updated_at: metadata.updated_at,
+    folder: file.folder
   };
 }
 async function updateCard(id, content) {
   const dir = await ensureCardsDirectory();
-  const oldPath = await findFileByID(dir, id);
-  if (!oldPath) {
+  const file = await findFileByID(dir, id);
+  if (!file) {
     throw new Error(`Card with ID ${id} not found`);
   }
+  const oldPath = file.filePath;
   const fileContent = await fs.readFile(oldPath, "utf-8");
   const { metadata } = parseMarkdownWithFrontmatter(fileContent);
   const updated = {
     id: metadata.id,
     content,
     created_at: metadata.created_at,
-    updated_at: Math.floor(Date.now() / 1e3)
+    updated_at: Math.floor(Date.now() / 1e3),
+    folder: file.folder
   };
-  const title = extractTitleFromContent(content);
-  const sanitized = sanitizeFilename(title);
-  const filename = await getUniqueFilename(dir, sanitized);
-  const newPath = path2.join(dir, filename);
+  const newPath = await getUniquePath(path2.dirname(oldPath), sanitizeFilename(extractTitleFromContent(content)), oldPath);
   await fs.writeFile(newPath, createMarkdownWithFrontmatter(updated), "utf-8");
   if (oldPath !== newPath) {
     try {
@@ -23728,11 +23746,11 @@ async function updateCard(id, content) {
 }
 async function deleteCard(id) {
   const dir = await ensureCardsDirectory();
-  const filePath = await findFileByID(dir, id);
-  if (!filePath) {
+  const file = await findFileByID(dir, id);
+  if (!file) {
     throw new Error(`Card with ID ${id} not found`);
   }
-  await fs.unlink(filePath);
+  await fs.unlink(file.filePath);
 }
 
 // dist/calendar.js
@@ -24027,11 +24045,12 @@ var server = new McpServer({
   version: "0.1.0"
 });
 server.tool("create_note", "Create a new sticky note with markdown content in HexStickyNote", {
-  content: external_exports.string().describe("The markdown content for the new note")
-}, async ({ content }) => {
+  content: external_exports.string().describe("The markdown content for the new note"),
+  folder: external_exports.string().optional().describe("Optional folder to put the note in (see list_notes); created when missing")
+}, async ({ content, folder }) => {
   try {
     console.error(`[DEBUG] Creating card with content: ${content.substring(0, 50)}...`);
-    const card = await createCard(content);
+    const card = await createCard(content, folder);
     console.error(`[DEBUG] Card created successfully: ${card.id}`);
     return {
       content: [{ type: "text", text: JSON.stringify(card, null, 2) }]
@@ -24045,11 +24064,12 @@ server.tool("create_note", "Create a new sticky note with markdown content in He
     };
   }
 });
-server.tool("list_notes", "List all sticky notes in HexStickyNote with a preview of each note's content", {}, async () => {
+server.tool("list_notes", "List all sticky notes in HexStickyNote with their folder and a preview of each note's content", {}, async () => {
   try {
     const cards = await listCards();
     const previews = cards.map((card) => ({
       id: card.id,
+      folder: card.folder,
       preview: card.content.slice(0, 200) + (card.content.length > 200 ? "..." : ""),
       created_at: new Date(card.created_at * 1e3).toISOString(),
       updated_at: new Date(card.updated_at * 1e3).toISOString()

@@ -59,6 +59,11 @@ fn main() {
             save_card,
             delete_card,
             reload_cards,
+            move_card,
+            list_folders,
+            create_folder,
+            rename_folder,
+            delete_folder,
             // Model Downloads (Ollama)
             pull_model,
             cancel_model_pull,
