@@ -121,7 +121,23 @@ fn sanitize_filename(title: &str) -> String {
         sanitized = "Untitled".to_string();
     }
 
+    // Windows refuses these names, with any extension (CON.md, nul.md)
+    if is_reserved_on_windows(&sanitized) {
+        sanitized.push('_');
+    }
+
     sanitized
+}
+
+/// Device names that Windows does not allow as a file or folder name
+fn is_reserved_on_windows(name: &str) -> bool {
+    const RESERVED: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+    let upper = name.to_ascii_uppercase();
+    let base = upper.split('.').next().unwrap_or("").trim_end();
+    RESERVED.contains(&base)
+        || ((base.starts_with("COM") || base.starts_with("LPT"))
+            && base.len() == 4
+            && base.as_bytes()[3].is_ascii_digit())
 }
 
 /// A folder name as it is used on disk, or an error when it cannot be one.
@@ -311,6 +327,10 @@ fn move_folder(root: &Path, from: &str, to: &str) -> Result<String, String> {
     let to = clean_folder_name(to)?;
     if from.is_empty() || to.is_empty() {
         return Err("Folder name is empty".to_string());
+    }
+    // Only an existing folder, never a path such as "../somewhere"
+    if !folders_in(root)?.iter().any(|f| f == from) {
+        return Err(format!("Folder “{}” not found", from));
     }
     let (old_path, new_path) = (root.join(from), root.join(&to));
     if !old_path.is_dir() {
@@ -533,6 +553,7 @@ mod tests {
         make_folder(&root, "Ideas").unwrap();
         assert_eq!(folders_in(&root).unwrap(), ["Ideas", "Work-Home"]);
         assert!(move_folder(&root, "Ideas", "Work-Home").is_err());
+        assert!(move_folder(&root, "../Ideas", "Elsewhere").is_err());
         assert_eq!(move_folder(&root, "Ideas", "Later").unwrap(), "Later");
 
         write_card(&root, &card("a", "# Plan", "")).unwrap();
@@ -542,6 +563,17 @@ mod tests {
         assert_eq!(scan(&root).unwrap().len(), 2);
         assert!(remove_folder(&root, "Later").is_err());
         assert!(remove_folder(&root, "").is_err());
+    }
+
+    #[test]
+    fn names_that_windows_reserves_are_changed() {
+        assert_eq!(sanitize_filename("CON"), "CON_");
+        assert_eq!(sanitize_filename("nul"), "nul_");
+        assert_eq!(sanitize_filename("Com1"), "Com1_");
+        assert_eq!(sanitize_filename("LPT9.notes"), "LPT9.notes_");
+        assert_eq!(sanitize_filename("Console"), "Console");
+        assert_eq!(sanitize_filename("COM10"), "COM10");
+        assert_eq!(clean_folder_name("aux").unwrap(), "aux_");
     }
 
     #[test]

@@ -85,6 +85,17 @@ On Linux:
 
 All of them follow `XDG_DATA_HOME` and `XDG_CONFIG_HOME`, which is how the tests and manual testing keep away from real data ([Development and testing](Run.md#testing-without-your-own-data)).
 
+## Security
+
+| Risk | How it is handled |
+| --- | --- |
+| Instructions hidden in data (prompt injection): a note, an event invitation or a time entry that talks to the assistant | The system prompt tells the model that tool results are data, never requests. Every change still waits for approval, and the approval card shows the full text that would be saved, not just a title. The assistant has no delete tool and no network access beyond the app's own data. A test with a real model (`real_model_does_not_follow_instructions_hidden_in_data`) checks that an event description with orders is reported, not obeyed. |
+| A web page in the browser calling the local HexTime on `127.0.0.1` | The sidecar serves only requests addressed to `127.0.0.1` or `localhost` (against DNS rebinding) and refuses changes without the `X-HexTime-CSRF` header, which another site cannot add. HexTime's UI, the assistant and the MCP server send it. |
+| A link in a note or an answer replacing the app with a web page | The main window loads only the app and HexTime. Web links open in the browser; other schemes (`file:` and the like) are blocked. |
+| Script in Markdown | Notes and answers are rendered through DOMPurify; the content security policy allows no remote scripts, images or connections. |
+| Remote pages using the app's commands | The capabilities in `src-tauri/capabilities/` list no remote URLs, so pages from other origins (HexTime's frame included) cannot call Tauri commands. |
+| Paths from the frontend or the MCP server | Folder and file names are cleaned (no `/`, `\`, `..`, hidden or Windows device names); a folder is renamed or deleted only if it exists in the notes directory. PDFs from HexTime are saved only as new `.pdf` files that start with `%PDF-`, in Downloads. |
+
 ## Repository
 
 ```

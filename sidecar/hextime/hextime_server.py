@@ -68,6 +68,28 @@ def lock_file(file) -> bool:
     return True
 
 
+def protect_from_other_sites(app) -> None:
+    """Keep web pages in the user's browser away from this local server.
+
+    HexTime's local mode trusts every request, but any site the user visits
+    can send requests to 127.0.0.1:
+
+    * A plain cross-site POST (no custom headers, so no CORS preflight) could
+      change data, e.g. stop the timer. HexTime's server-mode CSRF check
+      refuses a change without its X-HexTime-CSRF header, which a page on
+      another site cannot add. HexTime's own UI always sends it, and so do
+      HexStickyNote's assistant and MCP server.
+    * DNS rebinding (a site's own name made to point at 127.0.0.1) could also
+      read data. Only requests addressed to 127.0.0.1 or localhost are served.
+    """
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    from app.core.csrf import add_csrf_check
+
+    add_csrf_check(app)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
+
+
 def prepare_database(settings):
     """Migrate the shared database without racing the HexTime desktop app.
 
@@ -134,6 +156,7 @@ def main() -> None:
         sys.exit(EXIT_DATABASE_FAILED)
 
     app = create_app(settings.model_copy(update={"auto_migrate": False}))
+    protect_from_other_sites(app)
     uvicorn.run(app, host=HOST, port=args.port, log_level="warning")
 
 

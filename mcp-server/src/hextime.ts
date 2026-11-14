@@ -128,7 +128,11 @@ async function api(method: string, path: string, query?: Record<string, string>,
 
   const response = await fetch(url, {
     method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: {
+      // The sidecar refuses changes without it (CSRF protection, see hextime_server.py)
+      "X-HexTime-CSRF": "1",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();

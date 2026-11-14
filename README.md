@@ -2,7 +2,16 @@
 
 A modern desktop workspace for sticky notes, a calendar and time tracking, with a unique 3D carousel interface and a local AI assistant. The assistant runs on [Ollama](https://ollama.com) on your own machine, or you can let Claude manage your notes through MCP – your data stays on your computer.
 
-![HexStickyNote Screenshot](docs/image.png)
+![HexStickyNote Screenshot](docs/docs/images/screenshot.png)
+
+## Documentation
+
+The full documentation, HexTime's included, is in [`docs/`](docs/docs/index.md). To read it as a site:
+
+```bash
+cd docs
+uvx --with mkdocs-material --with mkdocs-awesome-nav mkdocs serve --open
+```
 
 ## Features
 

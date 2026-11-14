@@ -5,6 +5,7 @@
 #
 # Output: src-tauri/binaries/hextime-server-<rust target triple>
 # Requires: uv, npm, and a HexTime checkout (default: ../HexTime next to this repo).
+# On Windows, run it in Git Bash (as GitHub's Windows runners do).
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -18,6 +19,15 @@ TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
 EXT=""
 [[ "$TRIPLE" == *windows* ]] && EXT=".exe"
 
+# Paths handed to Python. In Git Bash, $PWD is /c/...; Windows' Python needs C:/...
+native() {
+  if [[ "$TRIPLE" == *windows* ]] && command -v cygpath >/dev/null; then
+    cygpath -m "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
 echo "==> HexTime: $HEXTIME_DIR"
 
 echo "==> Building the HexTime frontend"
@@ -28,6 +38,8 @@ SEP=":"
 [[ "$TRIPLE" == *windows* ]] && SEP=";"
 (
   cd "$HEXTIME_DIR/backend"
+  BACKEND="$(native "$PWD")"
+  WORK="$(native "$WORK_DIR")"
 
   # Keep this list in step with HexTime's backend/hextime.spec.
   # PDF export (newer HexTime versions) needs ReportLab's fonts in the bundle
@@ -41,21 +53,21 @@ SEP=":"
     --onefile \
     --noconfirm \
     --name hextime-server \
-    --paths "$PWD" \
-    --add-data "$PWD/alembic.ini${SEP}." \
-    --add-data "$PWD/alembic${SEP}alembic" \
-    --add-data "$PWD/app/static${SEP}app/static" \
-    --add-data "$PWD/app/i18n${SEP}app/i18n" \
-    --add-data "$PWD/app/reports/fonts${SEP}app/reports/fonts" \
+    --paths "$BACKEND" \
+    --add-data "$BACKEND/alembic.ini${SEP}." \
+    --add-data "$BACKEND/alembic${SEP}alembic" \
+    --add-data "$BACKEND/app/static${SEP}app/static" \
+    --add-data "$BACKEND/app/i18n${SEP}app/i18n" \
+    --add-data "$BACKEND/app/reports/fonts${SEP}app/reports/fonts" \
     --collect-submodules app \
     --collect-submodules uvicorn \
     --collect-submodules alembic \
     --collect-data tzdata \
     "${EXTRA_ARGS[@]}" \
-    --distpath "$WORK_DIR/dist" \
-    --workpath "$WORK_DIR/build" \
-    --specpath "$WORK_DIR" \
-    "$SIDECAR_DIR/hextime_server.py"
+    --distpath "$WORK/dist" \
+    --workpath "$WORK/build" \
+    --specpath "$WORK" \
+    "$(native "$SIDECAR_DIR/hextime_server.py")"
 )
 
 mkdir -p "$OUT_DIR"

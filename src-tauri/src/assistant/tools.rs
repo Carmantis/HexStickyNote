@@ -380,6 +380,19 @@ pub fn describe(name: &str, arguments: &Value) -> Result<String, ToolError> {
     }
 }
 
+/// The text a write tool will save, shown in full on the confirmation card so
+/// that the user sees exactly what is written (a note read by the model may
+/// contain instructions meant to slip something in)
+pub fn details(name: &str, arguments: &Value) -> Option<String> {
+    match name {
+        "create_note" => args::<CreateNoteArgs>(arguments).ok().map(|a| a.content),
+        "update_note" => args::<UpdateNoteArgs>(arguments).ok().map(|a| a.content),
+        "create_event" => args::<CreateEventArgs>(arguments).ok().and_then(|a| a.description),
+        _ => None,
+    }
+    .filter(|text| !text.trim().is_empty())
+}
+
 // ============================================================================
 // Execution
 // ============================================================================
@@ -425,7 +438,12 @@ async fn hextime(
         .await
         .map_err(|e| ToolError::Unavailable(format!("Time tracking ({})", e)))?;
 
-    let mut request = ctx.client.request(method, format!("{}/api/v1{}", base, path)).query(query);
+    let mut request = ctx
+        .client
+        .request(method, format!("{}/api/v1{}", base, path))
+        // The sidecar refuses changes without it (CSRF protection, see hextime_server.py)
+        .header("X-HexTime-CSRF", "1")
+        .query(query);
     if let Some(body) = body {
         request = request.json(&body);
     }
