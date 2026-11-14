@@ -8,6 +8,7 @@ pub mod calendar;
 pub mod card_manager;
 pub mod claude_mcp;
 pub mod commands;
+pub mod downloads;
 pub mod hextime;
 pub mod http;
 pub mod ollama;

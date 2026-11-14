@@ -29,6 +29,7 @@ SEP=":"
 (
   cd "$HEXTIME_DIR/backend"
 
+  # Keep this list in step with HexTime's backend/hextime.spec.
   # PDF export (newer HexTime versions) needs ReportLab's fonts in the bundle
   EXTRA_ARGS=()
   if uv run --frozen python -c "import reportlab" 2>/dev/null; then
@@ -44,8 +45,11 @@ SEP=":"
     --add-data "$PWD/alembic.ini${SEP}." \
     --add-data "$PWD/alembic${SEP}alembic" \
     --add-data "$PWD/app/static${SEP}app/static" \
+    --add-data "$PWD/app/i18n${SEP}app/i18n" \
+    --add-data "$PWD/app/reports/fonts${SEP}app/reports/fonts" \
     --collect-submodules app \
     --collect-submodules uvicorn \
+    --collect-submodules alembic \
     --collect-data tzdata \
     "${EXTRA_ARGS[@]}" \
     --distpath "$WORK_DIR/dist" \

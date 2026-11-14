@@ -23881,6 +23881,18 @@ function anyFreePort() {
     });
   });
 }
+function startupFailure(code) {
+  switch (code) {
+    case 10:
+      return "The time tracking data was saved by a newer HexTime than the one bundled with HexStickyNote. HexStickyNote needs to be updated.";
+    case 11:
+      return "The HexTime desktop app is open and uses an older version of the data. Close HexTime and try again.";
+    case 12:
+      return "HexTime could not open its database (disk full or read-only?).";
+    default:
+      return "HexTime stopped during startup";
+  }
+}
 async function ensureServer() {
   if (baseUrl && await isHexTime(baseUrl))
     return baseUrl;
@@ -23908,15 +23920,17 @@ async function findOrStartServer() {
   });
   const started = child;
   let exited = false;
-  started.once("exit", () => {
+  let exitCode = null;
+  started.once("exit", (code) => {
     exited = true;
+    exitCode = code;
     if (child === started)
       child = null;
   });
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (exited)
-      throw new Error("HexTime stopped during startup");
+      throw new Error(startupFailure(exitCode));
     if (await isHexTime(url)) {
       baseUrl = url;
       return url;

@@ -27,6 +27,12 @@ pub enum HexTimeError {
     NotBundled,
     #[error("Failed to start HexTime: {0}")]
     Spawn(#[from] std::io::Error),
+    #[error("Your time tracking data was saved by a newer HexTime than the one in this app. Update HexStickyNote to use the Time view.")]
+    DatabaseTooNew,
+    #[error("The HexTime desktop app is open and uses an older version of your data. Close HexTime and try again.")]
+    DesktopAppBusy,
+    #[error("HexTime could not open its database. Check the folder with hextime.db (disk full or read-only?).")]
+    DatabaseFailed,
     #[error("HexTime stopped during startup ({0})")]
     Exited(String),
     #[error("HexTime did not start within {} seconds", STARTUP_TIMEOUT.as_secs())]
@@ -134,8 +140,11 @@ impl HexTime {
     pub fn isolated() -> Self {
         static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let file = std::env::temp_dir().join(format!("hextime-test-{}-{}.db", std::process::id(), n));
-        let _ = std::fs::remove_file(&file);
+        // A directory of its own: HexTime keeps its lock file beside the database
+        let dir = std::env::temp_dir().join(format!("hextime-test-{}-{}", std::process::id(), n));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp directory for the test database");
+        let file = dir.join("hextime.db");
         Self {
             server: Mutex::new(None),
             preferred_port: None,
@@ -179,7 +188,13 @@ impl HexTime {
         let started = Instant::now();
         loop {
             if let Some(status) = child.try_wait()? {
-                return Err(HexTimeError::Exited(status.to_string()));
+                // Exit codes of sidecar/hextime/hextime_server.py
+                return Err(match status.code() {
+                    Some(10) => HexTimeError::DatabaseTooNew,
+                    Some(11) => HexTimeError::DesktopAppBusy,
+                    Some(12) => HexTimeError::DatabaseFailed,
+                    _ => HexTimeError::Exited(status.to_string()),
+                });
             }
 
             if is_hextime(client, &url).await {

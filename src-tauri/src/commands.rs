@@ -260,6 +260,12 @@ pub async fn hextime_start(
         .map_err(|e| e.to_string())
 }
 
+/// Save a PDF exported from the HexTime view; returns where it was saved
+#[tauri::command]
+pub async fn save_pdf(filename: String, bytes: Vec<u8>, app: tauri::AppHandle) -> Result<String, String> {
+    crate::downloads::save_pdf(&app, &filename, &bytes).map(|path| path.display().to_string())
+}
+
 /// Open cards directory in file explorer
 #[tauri::command]
 pub async fn open_cards_directory() -> Result<(), String> {

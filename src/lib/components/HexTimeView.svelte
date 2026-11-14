@@ -13,6 +13,7 @@
   let url: string | null = null;
   /** Bumped to reload the page after the assistant changed the timer */
   let reloadKey = 0;
+  let frame: HTMLIFrameElement | undefined;
   let error: string | null = null;
   let isStarting = false;
 
@@ -28,18 +29,47 @@
     }
   }
 
+  /** A file from HexTime's save_file bridge (see src-tauri/src/downloads.rs) */
+  async function handleMessage(event: MessageEvent) {
+    const message = event.data;
+    if (
+      message?.type !== "hextime-save-file" ||
+      !url ||
+      event.source !== frame?.contentWindow ||
+      event.origin !== new URL(url).origin
+    ) {
+      return;
+    }
+
+    let error: string | null = null;
+    try {
+      const bytes = Array.from(atob(message.data), (c) => c.charCodeAt(0));
+      await invoke("save_pdf", { filename: message.filename, bytes });
+    } catch (e) {
+      error = String(e);
+    }
+    frame?.contentWindow?.postMessage(
+      { type: "hextime-save-file-result", id: message.id, error },
+      event.origin,
+    );
+  }
+
   onMount(() => {
     start();
     const reload = () => (reloadKey += 1);
     window.addEventListener(HEXTIME_CHANGED_EVENT, reload);
-    return () => window.removeEventListener(HEXTIME_CHANGED_EVENT, reload);
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener(HEXTIME_CHANGED_EVENT, reload);
+      window.removeEventListener("message", handleMessage);
+    };
   });
 </script>
 
 <div class="hextime-view">
   {#if url}
     {#key reloadKey}
-      <iframe src={url} title="HexTime"></iframe>
+      <iframe bind:this={frame} src={url} title="HexTime"></iframe>
     {/key}
   {:else if error}
     <div class="status">

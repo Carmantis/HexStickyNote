@@ -53,6 +53,20 @@ function anyFreePort(): Promise<number> {
   });
 }
 
+/** Why the sidecar stopped; exit codes of sidecar/hextime/hextime_server.py */
+function startupFailure(code: number | null): string {
+  switch (code) {
+    case 10:
+      return "The time tracking data was saved by a newer HexTime than the one bundled with HexStickyNote. HexStickyNote needs to be updated.";
+    case 11:
+      return "The HexTime desktop app is open and uses an older version of the data. Close HexTime and try again.";
+    case 12:
+      return "HexTime could not open its database (disk full or read-only?).";
+    default:
+      return "HexTime stopped during startup";
+  }
+}
+
 /** URL of a running HexTime, starting the sidecar if needed */
 async function ensureServer(): Promise<string> {
   if (baseUrl && (await isHexTime(baseUrl))) return baseUrl;
@@ -88,14 +102,16 @@ async function findOrStartServer(): Promise<string> {
   });
   const started = child;
   let exited = false;
-  started.once("exit", () => {
+  let exitCode: number | null = null;
+  started.once("exit", (code) => {
     exited = true;
+    exitCode = code;
     if (child === started) child = null;
   });
 
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (exited) throw new Error("HexTime stopped during startup");
+    if (exited) throw new Error(startupFailure(exitCode));
     if (await isHexTime(url)) {
       baseUrl = url;
       return url;

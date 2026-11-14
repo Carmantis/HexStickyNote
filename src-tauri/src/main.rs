@@ -6,6 +6,7 @@
 
 use hex_sticky_note::calendar;
 use hex_sticky_note::commands::*;
+use hex_sticky_note::downloads;
 use hex_sticky_note::hextime::HexTime;
 use hex_sticky_note::http::HttpClient;
 use hex_sticky_note::settings_manager::SettingsManager;
@@ -38,6 +39,8 @@ fn main() {
         .manage(settings)
         .manage(HexTime::default())
         .setup(|app| {
+            downloads::create_main_window(app)?;
+
             // A calendar failure must not take the notes down with it
             match calendar::init(app) {
                 Ok(()) => log::info!("Calendar initialized"),
@@ -82,6 +85,7 @@ fn main() {
             calendar::commands::notifications::dismiss_reminder,
             // Time tracking (HexTime sidecar)
             hextime_start,
+            save_pdf,
             // Assistant
             assistant_send,
             assistant_confirm,
