@@ -8,7 +8,8 @@
 
   import { cardStore, editingCard, visibleCards, type Card } from "$lib/stores/cardStore";
   import NoteCard from "./Card.svelte";
-  import { onMount } from "svelte";
+  import NoteGrid from "./NoteGrid.svelte";
+  import { onMount, tick } from "svelte";
 
   $: cards = $visibleCards;
   $: isLoading = $cardStore.isLoading;
@@ -18,6 +19,79 @@
   let rotation = 0;
   let previousEditing: Card | null = null;
   let oldCardLength = 0;
+
+  /** Duration of the carousel folding in / tiles flying back (ms) */
+  const FOLD_MS = 380;
+  const GRID_LEAVE_MS = 320;
+
+  /** What is on screen; follows the store's layout through the animations */
+  let shown: "carousel" | "grid" = $cardStore.layout;
+  /** Carousel cards pulled into the middle (before the grid / when coming back) */
+  let folded = false;
+  /** Grid tiles flying back into the middle */
+  let gridLeaving = false;
+  /** Switch off transitions for one frame while the carousel jumps */
+  let instant = false;
+  let switching = false;
+
+  $: wanted = $cardStore.layout;
+  $: if (wanted !== shown && !switching) switchLayout(wanted);
+
+  // Creating or opening a note while the grid is up goes straight to the editor
+  $: if (editing && shown === "grid") {
+    shown = "carousel";
+    folded = false;
+    gridLeaving = false;
+    cardStore.setLayout("carousel");
+  }
+
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  async function switchLayout(target: "carousel" | "grid") {
+    switching = true;
+    try {
+      if (target === "grid") {
+        folded = true;
+        await wait(FOLD_MS);
+        // A note was opened for editing meanwhile: stay in the carousel
+        if (editing || $cardStore.layout !== "grid") {
+          folded = false;
+          return;
+        }
+        shown = "grid";
+      } else {
+        gridLeaving = true;
+        await wait(GRID_LEAVE_MS);
+        gridLeaving = false;
+
+        // Put the picked card in front without spinning there, then unfold
+        instant = true;
+        folded = true;
+        focusPickedCard();
+        shown = "carousel";
+        await tick();
+        await nextFrame();
+        instant = false;
+        await nextFrame();
+        folded = false;
+      }
+    } finally {
+      // A layout toggled again during the animation is picked up by `$: if (wanted ...)`
+      switching = false;
+    }
+  }
+
+  function focusPickedCard() {
+    const id = $cardStore.focusCardId;
+    if (!id) return;
+    cardStore.clearFocus();
+    const index = cards.findIndex((c) => c.id === id);
+    if (index !== -1) {
+      currentIndex = index;
+      rotation = -index * angleIncrement;
+    }
+  }
 
   // Calculate rotation angle based on number of cards
   $: angleIncrement = cards.length > 0 ? 360 / cards.length : 120;
@@ -87,7 +161,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (editing) return; // Don't navigate while editing
+    if (editing || shown !== "carousel") return; // Don't navigate while editing
 
     // Arrow keys in a text field (e.g. the assistant chat) move the cursor
     const target = event.target as HTMLElement | null;
@@ -136,8 +210,10 @@
         <p>Create your first note to get started</p>
       {/if}
     </div>
+  {:else if shown === "grid"}
+    <NoteGrid {cards} leaving={gridLeaving} />
   {:else}
-    <div class="carousel-3d">
+    <div class="carousel-3d" class:folded class:instant>
       <!-- Navigation Arrows -->
       <button
         class="nav-arrow nav-arrow-left"
@@ -170,9 +246,11 @@
                 class:active={i === currentIndex}
                 class:behind={isFacingAway(i * angleIncrement + rotation)}
                 style="transform: rotateY({i * angleIncrement +
-                  rotation}deg) translateZ({radius}px) scale({i === currentIndex
-                  ? 1.05
-                  : 1}); {i === currentIndex ? '--card-bg: rgb(18, 18, 26); --card-backdrop: none;' : ''}"
+                  rotation}deg) translateZ({folded ? 0 : radius}px) scale({folded
+                  ? 0.25
+                  : i === currentIndex
+                    ? 1.05
+                    : 1}); {i === currentIndex ? '--card-bg: rgb(18, 18, 26); --card-backdrop: none;' : ''}"
               >
                 <NoteCard {card} />
               </div>
@@ -329,6 +407,28 @@
     pointer-events: none; /* Prevent clicking background cards */
   }
 
+  /* Folding into the grid: cards pull into the middle and fade */
+  .folded .carousel-item {
+    opacity: 0 !important;
+    transition:
+      opacity 0.32s ease-in,
+      visibility 0.32s,
+      transform 0.38s cubic-bezier(0.55, 0, 0.75, 0.3),
+      filter 0.3s ease;
+  }
+
+  .folded .nav-arrow,
+  .folded .carousel-indicators {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+
+  .instant .carousel-item,
+  .instant .nav-arrow,
+  .instant .carousel-indicators {
+    transition: none !important;
+  }
+
   .carousel-item.behind {
     opacity: 0;
     visibility: hidden;
@@ -423,6 +523,7 @@
 
   /* Indicators */
   .carousel-indicators {
+    transition: opacity 0.3s ease;
     position: absolute;
     top: 1rem;
     left: 50%;

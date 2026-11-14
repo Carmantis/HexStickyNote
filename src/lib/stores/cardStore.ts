@@ -33,6 +33,18 @@ export type FolderFilter = string | null;
 export const NO_FOLDER = '';
 
 const FOLDER_KEY = 'hexstickynote.folder';
+const LAYOUT_KEY = 'hexstickynote.notesLayout';
+
+/** How the notes are shown: the 3D carousel or a grid of small tiles */
+export type NotesLayout = 'carousel' | 'grid';
+
+function loadLayout(): NotesLayout {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === 'grid' ? 'grid' : 'carousel';
+  } catch {
+    return 'carousel';
+  }
+}
 
 function loadFolderFilter(): FolderFilter {
   try {
@@ -67,6 +79,9 @@ interface CardState {
   folders: string[];
   /** Folder whose notes the carousel shows */
   folder: FolderFilter;
+  layout: NotesLayout;
+  /** Card the carousel should bring to the front (picked from the grid) */
+  focusCardId: string | null;
   editingCardId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -81,6 +96,8 @@ function createCardStore() {
     cards: [],
     folders: [],
     folder: typeof window !== 'undefined' ? loadFolderFilter() : null,
+    layout: typeof window !== 'undefined' ? loadLayout() : 'carousel',
+    focusCardId: null,
     editingCardId: null,
     isLoading: false,
     error: null
@@ -172,6 +189,15 @@ function createCardStore() {
     if (editing) {
       await invoke('save_card', { card: editing });
     }
+  }
+
+  function setLayout(layout: NotesLayout) {
+    try {
+      localStorage.setItem(LAYOUT_KEY, layout);
+    } catch {
+      // Not remembered; the layout still changes
+    }
+    update(s => ({ ...s, layout }));
   }
 
   return {
@@ -324,6 +350,28 @@ function createCardStore() {
         update(s => ({ ...s, error: errorText(error) }));
         return false;
       }
+    },
+
+    setLayout,
+
+    toggleLayout() {
+      let layout: NotesLayout = 'carousel';
+      update(s => {
+        layout = s.layout === 'grid' ? 'carousel' : 'grid';
+        return s;
+      });
+      setLayout(layout);
+    },
+
+    /** Go back to the carousel with this card in front */
+    showInCarousel(cardId: string) {
+      update(s => ({ ...s, focusCardId: cardId }));
+      setLayout('carousel');
+    },
+
+    /** The carousel has brought the focused card to the front */
+    clearFocus() {
+      update(s => ({ ...s, focusCardId: null }));
     },
 
     /**

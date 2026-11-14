@@ -209,13 +209,14 @@
 <style>
   .folder-menu {
     position: relative;
+    min-width: 0;
   }
 
   .folder-button {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    max-width: 170px;
+    max-width: min(170px, 100%);
     padding: 0.45rem 0.6rem;
     background: transparent;
     color: var(--text-secondary);

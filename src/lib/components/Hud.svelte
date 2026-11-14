@@ -127,6 +127,23 @@
         {#if view === "notes"}
         <FolderMenu />
 
+        {#if !editing}
+          <button
+            class="action-button"
+            class:active={$cardStore.layout === "grid"}
+            on:click|stopPropagation={() => cardStore.toggleLayout()}
+            title={$cardStore.layout === "grid" ? "Show as carousel" : "Show all as tiles"}
+            aria-pressed={$cardStore.layout === "grid"}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+          </button>
+        {/if}
+
         <button
           class="action-button"
           on:click|stopPropagation={handleRefreshCards}
@@ -314,11 +331,13 @@
   }
 
   .hud-header {
-    display: flex;
+    /* Tabs stay centred; the side columns can never run under them */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    justify-content: space-between;
+    gap: 0.75rem;
     padding: 0.75rem 1.5rem;
-    width: min(680px, calc(100% - 3rem));
+    width: min(800px, calc(100% - 3rem));
     margin: 1.5rem auto 0;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--border-radius);
@@ -370,13 +389,11 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    min-width: 0;
     z-index: 2;
   }
 
   .view-tabs {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
     display: flex;
     gap: 0.25rem;
     padding: 0.25rem;
@@ -414,8 +431,8 @@
 
   .hud-actions {
     display: flex;
+    justify-content: flex-end;
     gap: 0.5rem;
-    margin-left: auto;
     z-index: 2;
   }
 
