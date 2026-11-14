@@ -14,7 +14,27 @@ use std::path::PathBuf;
 fn get_claude_config_path() -> Result<PathBuf, String> {
     let base_dirs = directories::BaseDirs::new()
         .ok_or_else(|| "Failed to determine user config directory".to_string())?;
+
+    #[cfg(windows)]
+    {
+        if let Some(dir) = packaged_claude_config_dir(base_dirs.data_local_dir()) {
+            return Ok(dir.join("claude_desktop_config.json"));
+        }
+    }
+
     Ok(base_dirs.config_dir().join("Claude").join("claude_desktop_config.json"))
+}
+
+/// Claude Desktop installed as an MSIX package reads %APPDATA% through a
+/// per-package redirection: `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude`.
+#[cfg(any(windows, test))]
+fn packaged_claude_config_dir(local_app_data: &std::path::Path) -> Option<PathBuf> {
+    std::fs::read_dir(local_app_data.join("Packages"))
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("Claude_"))
+        .map(|entry| entry.path().join("LocalCache").join("Roaming").join("Claude"))
+        .find(|dir| dir.is_dir())
 }
 
 /// Get the path to the bundled MCP server
@@ -147,4 +167,26 @@ pub fn remove() -> Result<(), String> {
 
     log::info!("Claude Desktop MCP removed");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_config_folder_of_packaged_claude() {
+        let local = std::env::temp_dir().join(format!("hex-claude-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&local);
+        std::fs::create_dir_all(local.join("Packages").join("Other_1")).unwrap();
+        assert_eq!(packaged_claude_config_dir(&local), None);
+
+        let claude = local.join("Packages").join("Claude_pzs8sxrjxfjjc");
+        std::fs::create_dir_all(&claude).unwrap();
+        assert_eq!(packaged_claude_config_dir(&local), None, "not used before Claude has run");
+
+        let config = claude.join("LocalCache").join("Roaming").join("Claude");
+        std::fs::create_dir_all(&config).unwrap();
+        assert_eq!(packaged_claude_config_dir(&local), Some(config));
+        let _ = std::fs::remove_dir_all(&local);
+    }
 }

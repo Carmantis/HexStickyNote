@@ -121,7 +121,23 @@ fn sanitize_filename(title: &str) -> String {
         sanitized = "Untitled".to_string();
     }
 
+    // Windows refuses these names, with any extension (CON.md, nul.md)
+    if is_reserved_on_windows(&sanitized) {
+        sanitized.push('_');
+    }
+
     sanitized
+}
+
+/// Device names that Windows does not allow as a file or folder name
+fn is_reserved_on_windows(name: &str) -> bool {
+    const RESERVED: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+    let upper = name.to_ascii_uppercase();
+    let base = upper.split('.').next().unwrap_or("").trim_end();
+    RESERVED.contains(&base)
+        || ((base.starts_with("COM") || base.starts_with("LPT"))
+            && base.len() == 4
+            && base.as_bytes()[3].is_ascii_digit())
 }
 
 /// A folder name as it is used on disk, or an error when it cannot be one.
@@ -542,6 +558,17 @@ mod tests {
         assert_eq!(scan(&root).unwrap().len(), 2);
         assert!(remove_folder(&root, "Later").is_err());
         assert!(remove_folder(&root, "").is_err());
+    }
+
+    #[test]
+    fn names_that_windows_reserves_are_changed() {
+        assert_eq!(sanitize_filename("CON"), "CON_");
+        assert_eq!(sanitize_filename("nul"), "nul_");
+        assert_eq!(sanitize_filename("Com1"), "Com1_");
+        assert_eq!(sanitize_filename("LPT9.notes"), "LPT9.notes_");
+        assert_eq!(sanitize_filename("Console"), "Console");
+        assert_eq!(sanitize_filename("COM10"), "COM10");
+        assert_eq!(clean_folder_name("aux").unwrap(), "aux_");
     }
 
     #[test]

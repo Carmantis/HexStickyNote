@@ -23569,7 +23569,14 @@ function sanitizeFilename(title) {
   if (!sanitized) {
     sanitized = "Untitled";
   }
+  if (isReservedOnWindows(sanitized)) {
+    sanitized += "_";
+  }
   return sanitized;
+}
+function isReservedOnWindows(name) {
+  const base = name.toUpperCase().split(".")[0].trimEnd();
+  return /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/.test(base);
 }
 async function exists(filePath) {
   try {

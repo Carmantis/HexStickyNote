@@ -53,7 +53,19 @@ function sanitizeFilename(title: string): string {
     sanitized = "Untitled";
   }
 
+  // Windows refuses these names, with any extension (CON.md, nul.md)
+  if (isReservedOnWindows(sanitized)) {
+    sanitized += "_";
+  }
+
   return sanitized;
+}
+
+// Device names that Windows does not allow as a file or folder name
+// (same rule as is_reserved_on_windows in src-tauri/src/card_manager.rs)
+function isReservedOnWindows(name: string): boolean {
+  const base = name.toUpperCase().split(".")[0].trimEnd();
+  return /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/.test(base);
 }
 
 async function exists(filePath: string): Promise<boolean> {

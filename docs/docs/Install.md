@@ -51,7 +51,16 @@ o.window({ class = "^hex-sticky-note$", title = "^HexStickyNote Orb$" }, {
 
 ## Windows
 
-The app itself builds on Windows (`npm run tauri build`, `.msi` and `.exe`), but the HexTime sidecar's build script is a Bash script, so a Windows package does not include the Time tab yet.
+Build on Windows itself; neither the app nor the sidecar cross-compiles. You need Rust (with the MSVC build tools), Node.js, [uv](https://docs.astral.sh/uv/) and [Git for Windows](https://gitforwindows.org/), whose Git Bash runs the sidecar's build script. In Git Bash:
+
+```bash
+npm install
+npm run build:full        # .msi and setup .exe in src-tauri/target/release/bundle/
+```
+
+If `npm run build:hextime` picks up WSL's `bash` instead of Git Bash, run `bash sidecar/hextime/build.sh` in Git Bash and then `npm run tauri build -- --config src-tauri/tauri.hextime.conf.json`.
+
+The installers include WebView2 and install for the current user. On Windows the data is under `%APPDATA%`: notes in `HexStickyNote\HexStickyNote\data\cards`, the calendar in `com.hexcalendar.app`. Claude Desktop installed from its MSIX package keeps its configuration under `%LOCALAPPDATA%\Packages\Claude_…`; **Add to Claude Desktop** finds it there.
 
 ## Not working
 
