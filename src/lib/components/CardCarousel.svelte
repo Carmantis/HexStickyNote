@@ -388,7 +388,8 @@
     position: absolute;
     /* Sizes account for ~1.6x perspective magnification (perspective 1200px, translateZ ~450px) */
     width: clamp(200px, 35vw, 550px);
-    height: clamp(180px, calc(50vh - 3rem), 500px);
+    /* Also fits the space left when the assistant box is open */
+    height: clamp(160px, min(calc(50vh - 3rem), calc(100% - 6rem)), 500px);
     left: 50%;
     top: 50%;
     /* Remove preserve-3d to flatten the card and its contents into a single plane,
@@ -461,7 +462,7 @@
   /* Edit container - matches the visual size of the magnified carousel card */
   .edit-container {
     width: clamp(300px, 55vw, 800px);
-    height: clamp(280px, calc(80vh - 6rem), 750px);
+    height: clamp(200px, min(calc(80vh - 6rem), calc(100% - 2rem)), 750px);
     display: flex;
     align-items: stretch;
     justify-content: center;

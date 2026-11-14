@@ -4,6 +4,7 @@
    */
 
   import { onMount, onDestroy } from "svelte";
+  import { fly } from "svelte/transition";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { invoke } from "@tauri-apps/api/core";
   import { cardStore, editingCard } from "$lib/stores/cardStore";
@@ -24,6 +25,11 @@
   let view: View = loadView();
   let showSettings = false;
   let showAssistant = false;
+
+  // Height of the assistant box at the bottom; dragged from its top edge
+  const ASSISTANT_HEIGHT_KEY = "hexstickynote.assistantHeight";
+  const ASSISTANT_MIN_HEIGHT = 160;
+  let assistantHeight = loadAssistantHeight();
   let isGhostMode = false;
   $: editing = $editingCard;
 
@@ -38,6 +44,42 @@
     } catch {
       return "notes";
     }
+  }
+
+  function loadAssistantHeight(): number {
+    try {
+      const saved = Number(localStorage.getItem(ASSISTANT_HEIGHT_KEY));
+      return saved >= ASSISTANT_MIN_HEIGHT ? saved : 280;
+    } catch {
+      return 280;
+    }
+  }
+
+  /** Room left for the box: the header and some of the notes stay visible */
+  function maxAssistantHeight(): number {
+    return Math.max(ASSISTANT_MIN_HEIGHT, window.innerHeight - 320);
+  }
+
+  function startAssistantResize(event: PointerEvent) {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = assistantHeight;
+
+    const move = (e: PointerEvent) => {
+      const height = startHeight + (startY - e.clientY);
+      assistantHeight = Math.round(Math.min(maxAssistantHeight(), Math.max(ASSISTANT_MIN_HEIGHT, height)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      try {
+        localStorage.setItem(ASSISTANT_HEIGHT_KEY, String(assistantHeight));
+      } catch {
+        // Not remembered; the box keeps its size until closed
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
   }
 
   function setView(next: View) {
@@ -295,7 +337,13 @@
     </main>
 
     {#if showAssistant}
-      <div class="assistant-dock">
+      <div
+        class="assistant-dock"
+        style="height: {Math.min(assistantHeight, maxAssistantHeight())}px"
+        transition:fly={{ y: 40, duration: 200 }}
+      >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="assistant-resize" on:pointerdown={startAssistantResize} title="Drag to resize"></div>
         <AssistantPanel {view} on:close={() => (showAssistant = false)} />
       </div>
     {/if}
@@ -464,14 +512,24 @@
     color: white;
   }
 
+  /* Low box under the notes, as wide as the top bar; the content above shrinks */
   .assistant-dock {
-    position: absolute;
-    top: calc(1.5rem + 60px + 1rem);
-    right: 1.5rem;
-    bottom: 1.5rem;
-    width: min(380px, 45vw);
+    position: relative;
+    flex-shrink: 0;
+    width: min(800px, calc(100% - 3rem));
+    margin: 0.75rem auto 1.5rem;
     z-index: 50;
     pointer-events: auto;
+  }
+
+  .assistant-resize {
+    position: absolute;
+    top: -6px;
+    left: 1rem;
+    right: 1rem;
+    height: 10px;
+    z-index: 1;
+    cursor: ns-resize;
   }
 
   .delete-button:hover {
@@ -486,6 +544,7 @@
 
   .hud-content {
     flex: 1;
+    min-height: 0;
     overflow: hidden;
     pointer-events: auto; /* Sisältö pitää olla klikattavissa */
   }

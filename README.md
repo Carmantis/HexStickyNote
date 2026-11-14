@@ -28,7 +28,8 @@ The HUD has three views, switched from the tabs in the top bar:
 
 ## AI Assistant
 
-Open the assistant from the chat button in the top bar. It can look up notes, calendar events and
+Open the assistant from the chat button in the top bar; it opens as a box at the bottom of the
+window (drag its top edge to resize it). It can look up notes, calendar events and
 time entries, and propose changes: creating or editing notes, creating events, and starting or
 stopping the timer. Each change is shown as a card that you approve or decline; nothing is deleted.
 

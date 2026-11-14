@@ -40,6 +40,16 @@
   // Ready to type as soon as the panel opens
   onMount(() => inputElement?.focus());
 
+  /** The input grows with its text, up to a few lines */
+  function fitInput() {
+    if (!inputElement) return;
+    inputElement.style.height = 'auto';
+    inputElement.style.height = `${Math.min(inputElement.scrollHeight, 120)}px`;
+    inputElement.style.overflowY = inputElement.scrollHeight > 120 ? 'auto' : 'hidden';
+  }
+
+  $: input, tick().then(fitInput);
+
   function render(markdown: string): string {
     return DOMPurify.sanitize(marked.parse(markdown, { async: false }) as string, {
       USE_PROFILES: { html: true },
@@ -171,7 +181,7 @@
       bind:this={inputElement}
       bind:value={input}
       on:keydown={handleKeydown}
-      rows="2"
+      rows="1"
       placeholder={!isReady
         ? 'Select an Ollama model in Settings'
         : state.pending.length > 0
@@ -206,7 +216,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.75rem 1rem;
+    padding: 0.35rem 0.5rem 0.35rem 0.9rem;
     border-bottom: 1px solid var(--border-color);
   }
 
@@ -215,6 +225,7 @@
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -257,7 +268,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    padding: 1rem;
+    padding: 0.75rem 1rem;
     user-select: text;
   }
 
@@ -270,17 +281,17 @@
 
   .suggestions {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 0.4rem;
-    margin-top: 0.75rem;
+    margin-top: 0.6rem;
   }
 
   .suggestion {
     text-align: left;
-    padding: 0.5rem 0.75rem;
+    padding: 0.35rem 0.75rem;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 999px;
     color: var(--text-primary);
     font-size: 0.8125rem;
   }
@@ -290,7 +301,7 @@
   }
 
   .bubble {
-    max-width: 92%;
+    max-width: 80%;
     padding: 0.6rem 0.8rem;
     border-radius: 10px;
     font-size: 0.875rem;
@@ -369,6 +380,7 @@
   }
 
   .confirm-card {
+    max-width: 32rem;
     padding: 0.75rem;
     background: rgba(99, 102, 241, 0.08);
     border: 1px solid var(--accent-primary);
@@ -450,15 +462,18 @@
 
   .composer {
     display: flex;
+    align-items: flex-end;
     gap: 0.5rem;
-    padding: 0.75rem;
+    padding: 0.5rem 0.75rem;
     border-top: 1px solid var(--border-color);
   }
 
   textarea {
     flex: 1;
     resize: none;
+    max-height: 120px;
     padding: 0.5rem 0.75rem;
+    line-height: 1.4;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
