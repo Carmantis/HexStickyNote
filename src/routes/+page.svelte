@@ -86,8 +86,8 @@
       toggleHud();
     }
 
-    // Escape to close HUD (only if not editing)
-    if (event.key === 'Escape' && isHudOpen) {
+    // Escape to close HUD (only if not editing, and not used by a menu or the note grid)
+    if (event.key === 'Escape' && isHudOpen && !event.defaultPrevented) {
       // Don't close if we're in an input field
       const activeElement = document.activeElement;
       if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') {

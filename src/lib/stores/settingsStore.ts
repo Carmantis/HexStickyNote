@@ -1,39 +1,39 @@
 /**
- * Settings Store - Manages AI provider configuration
+ * Settings Store - the Ollama model the assistant uses
  *
  * Handles:
- * - Provider selection
- * - API key status (configured/not configured)
- * - AI streaming state
+ * - Models installed in the local Ollama
+ * - The selected model
  */
 
 import { writable, derived } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface Provider {
+export interface LocalModel {
+  /** "ollama:<name>" */
   id: string;
   name: string;
-  configured: boolean;
+  size: number | null;
+  details: string | null;
+  /** Whether the assistant can use it (tool calling) */
+  supports_tools: boolean;
 }
 
-export interface AiStreamChunk {
-  chunk: string;
-  done: boolean;
-  gpu_info?: string;
+interface LocalModelList {
+  models: LocalModel[];
+  ollama_available: boolean;
 }
 
 interface SettingsState {
-  providers: Provider[];
-  activeProviderId: string | null;
+  models: LocalModel[];
+  ollamaAvailable: boolean;
+  activeModelId: string | null;
   isLoading: boolean;
-  isStreaming: boolean;
   error: string | null;
-  currentGpuInfo: string | null;
 }
 
 // ============================================================================
@@ -41,34 +41,34 @@ interface SettingsState {
 // ============================================================================
 
 function createSettingsStore() {
-  const { subscribe, set, update } = writable<SettingsState>({
-    providers: [],
-    activeProviderId: null,
+  const { subscribe, update } = writable<SettingsState>({
+    models: [],
+    ollamaAvailable: false,
+    activeModelId: null,
     isLoading: false,
-    isStreaming: false,
-    error: null,
-    currentGpuInfo: null
+    error: null
   });
-
-  let streamUnlisten: UnlistenFn | null = null;
 
   return {
     subscribe,
 
     /**
-     * Load providers and their configuration status
+     * Load available models and the selected model
      */
-    async loadProviders() {
+    async loadModels() {
       update(s => ({ ...s, isLoading: true, error: null }));
 
       try {
-        const providers = await invoke<Provider[]>('get_providers');
-        const activeProvider = await invoke<string | null>('get_active_provider');
+        const [list, activeModelId] = await Promise.all([
+          invoke<LocalModelList>('list_local_models'),
+          invoke<string | null>('get_active_model')
+        ]);
 
         update(s => ({
           ...s,
-          providers,
-          activeProviderId: activeProvider,
+          models: list.models,
+          ollamaAvailable: list.ollama_available,
+          activeModelId,
           isLoading: false
         }));
       } catch (error) {
@@ -81,116 +81,18 @@ function createSettingsStore() {
     },
 
     /**
-     * Save an API key for a provider
+     * Select the model the assistant uses (null clears the selection)
      */
-    async saveApiKey(providerId: string, apiKey: string) {
-      update(s => ({ ...s, isLoading: true, error: null }));
-
+    async setActiveModel(modelId: string | null) {
       try {
-        await invoke('save_api_key', { provider: providerId, key: apiKey });
-
-        // Refresh providers to update configured status
-        await this.loadProviders();
-      } catch (error) {
-        update(s => ({
-          ...s,
-          isLoading: false,
-          error: error instanceof Error ? error.message : String(error)
-        }));
-      }
-    },
-
-    /**
-     * Delete an API key for a provider
-     */
-    async deleteApiKey(providerId: string) {
-      try {
-        await invoke('delete_api_key', { provider: providerId });
-        await this.loadProviders();
+        await invoke('set_active_model', { modelId });
+        update(s => ({ ...s, activeModelId: modelId, error: null }));
       } catch (error) {
         update(s => ({
           ...s,
           error: error instanceof Error ? error.message : String(error)
         }));
       }
-    },
-
-    /**
-     * Set the active AI provider
-     */
-    async setActiveProvider(providerId: string) {
-      try {
-        await invoke('set_active_provider', { provider: providerId });
-        update(s => ({ ...s, activeProviderId: providerId }));
-      } catch (error) {
-        update(s => ({
-          ...s,
-          error: error instanceof Error ? error.message : String(error)
-        }));
-      }
-    },
-
-    /**
-     * Invoke AI with streaming response
-     * Returns a function to stop listening
-     */
-    async invokeAiStream(
-      prompt: string,
-      context: string,
-      onChunk: (chunk: string) => void,
-      onDone: () => void,
-      onError: (error: string) => void
-    ) {
-      // Clean up previous listener
-      if (streamUnlisten) {
-        streamUnlisten();
-        streamUnlisten = null;
-      }
-
-      update(s => ({ ...s, isStreaming: true, error: null, currentGpuInfo: null }));
-
-      try {
-        // Set up event listener for streaming chunks
-        streamUnlisten = await listen<AiStreamChunk>('ai-stream-chunk', (event) => {
-          if (event.payload.gpu_info) {
-            update(s => ({ ...s, currentGpuInfo: event.payload.gpu_info || null }));
-          }
-
-          if (event.payload.done) {
-            update(s => ({ ...s, isStreaming: false }));
-            onDone();
-
-            if (streamUnlisten) {
-              streamUnlisten();
-              streamUnlisten = null;
-            }
-          } else {
-            onChunk(event.payload.chunk);
-          }
-        });
-
-        // Start the stream
-        await invoke('invoke_ai_stream', { prompt, context });
-      } catch (error) {
-        update(s => ({
-          ...s,
-          isStreaming: false,
-          error: error instanceof Error ? error.message : String(error)
-        }));
-        onError(error instanceof Error ? error.message : String(error));
-
-        if (streamUnlisten) {
-          streamUnlisten();
-          streamUnlisten = null;
-        }
-      }
-    },
-
-    /**
-     * Clear any errors
-     */
-    clearError() {
-      update(s => ({ ...s, error: null }));
     }
   };
 }
@@ -203,26 +105,25 @@ export const settingsStore = createSettingsStore();
 // ============================================================================
 
 /**
- * Get the currently active provider object
+ * The selected model, if it is currently available
  */
-export const activeProvider = derived(settingsStore, $store =>
-  $store.activeProviderId
-    ? $store.providers.find(p => p.id === $store.activeProviderId) ?? null
+export const activeModel = derived(settingsStore, $store =>
+  $store.activeModelId
+    ? $store.models.find(m => m.id === $store.activeModelId) ?? null
     : null
 );
 
 /**
- * Check if any provider is configured
+ * Format a byte count for display, e.g. "4.6 GB"
  */
-export const hasConfiguredProvider = derived(settingsStore, $store =>
-  $store.providers.some(p => p.configured)
-);
-
-/**
- * Check if AI is ready to use (has active provider with API key)
- */
-export const isAiReady = derived(settingsStore, $store => {
-  if (!$store.activeProviderId) return false;
-  const provider = $store.providers.find(p => p.id === $store.activeProviderId);
-  return provider?.configured ?? false;
-});
+export function formatBytes(bytes: number | null | undefined): string {
+  if (!bytes) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(unit >= 3 ? 1 : 0)} ${units[unit]}`;
+}

@@ -2,25 +2,27 @@
 //!
 //! These commands are exposed to the frontend via the invoke() function.
 
-use crate::ai_manager::AiManager;
+use crate::assistant::{self, tools::ToolContext, AssistantContext, AssistantTurn, Decision, OllamaBackend};
+use crate::calendar::db::DbPool;
 use crate::card_manager::{self, Card};
 use crate::claude_mcp;
-use crate::keyring_store::{AiProvider, KeyringStore};
-use crate::local_model::{self, ModelStatus};
+use crate::hextime::HexTime;
+use crate::http::HttpClient;
+use crate::ollama::{self, ModelInfo};
 use crate::settings_manager::SettingsManager;
 use crate::window_state::{WindowState};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Manager, State};
 
 // ============================================================================
 // Types
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderInfo {
-    pub id: String,
-    pub name: String,
-    pub configured: bool,
+pub struct LocalModelList {
+    pub models: Vec<ModelInfo>,
+    /// Whether a local Ollama server answered
+    pub ollama_available: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -43,88 +45,41 @@ impl From<&str> for CommandError {
 }
 
 // ============================================================================
-// API Key Management Commands
+// Model Selection Commands
 // ============================================================================
 
-/// Save an API key securely to the OS credential store
+/// List the models installed in Ollama
 #[tauri::command]
-pub async fn save_api_key(provider: String, key: String) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-
-    KeyringStore::save_api_key(provider, &key).map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-/// Delete an API key from the credential store
-#[tauri::command]
-pub async fn delete_api_key(provider: String) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-
-    KeyringStore::delete_api_key(provider).map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-/// Get list of all providers with their configuration status
-#[tauri::command]
-pub async fn get_providers() -> Vec<ProviderInfo> {
-    AiProvider::all()
-        .into_iter()
-        .map(|p| ProviderInfo {
-            id: p.as_str().to_string(),
-            name: p.display_name().to_string(),
-            configured: KeyringStore::has_api_key(p),
-        })
-        .collect()
-}
-
-/// Set the active AI provider
-#[tauri::command]
-pub async fn set_active_provider(
-    provider: String,
-    ai_manager: State<'_, AiManager>,
-) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-
-    if !KeyringStore::has_api_key(provider) {
-        return Err(format!(
-            "No API key configured for {}. Please add your API key in Settings.",
-            provider.display_name()
-        ));
+pub async fn list_local_models(http: State<'_, HttpClient>) -> Result<LocalModelList, String> {
+    match ollama::list_models(http.client()).await {
+        Ok(models) => Ok(LocalModelList { models, ollama_available: true }),
+        Err(e) => {
+            log::info!("Ollama models not listed: {}", e);
+            Ok(LocalModelList { models: Vec::new(), ollama_available: false })
+        }
     }
-
-    ai_manager.set_active_provider(provider).await;
-
-    Ok(())
 }
 
-/// Get the currently active provider
+/// Get the selected model id
 #[tauri::command]
-pub async fn get_active_provider(ai_manager: State<'_, AiManager>) -> Result<Option<String>, String> {
-    let provider = ai_manager.get_active_provider().await;
-    Ok(provider.map(|p| p.as_str().to_string()))
+pub async fn get_active_model(
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+) -> Result<Option<String>, String> {
+    Ok(settings.get_active_model())
 }
 
-// ============================================================================
-// AI Streaming Commands
-// ============================================================================
-
-/// Invoke AI with streaming response
-/// Results are emitted as 'ai-stream-chunk' events
+/// Select the Ollama model the assistant uses (None clears the selection)
 #[tauri::command]
-pub async fn invoke_ai_stream(
-    prompt: String,
-    context: String,
-    app: tauri::AppHandle,
-    ai_manager: State<'_, AiManager>,
+pub async fn set_active_model(
+    model_id: Option<String>,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
 ) -> Result<(), String> {
-    ai_manager
-        .invoke_stream(&app, &prompt, &context)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    if let Some(id) = &model_id {
+        if !id.starts_with(ollama::OLLAMA_PREFIX) {
+            return Err(format!("Invalid model id: {}", id));
+        }
+    }
+    settings.set_active_model(model_id).map_err(|e| e.to_string())
 }
 
 // ============================================================================
@@ -133,8 +88,8 @@ pub async fn invoke_ai_stream(
 
 /// Create a new card
 #[tauri::command]
-pub async fn create_card(content: String) -> Result<Card, String> {
-    card_manager::create_card(content)
+pub async fn create_card(content: String, folder: Option<String>) -> Result<Card, String> {
+    card_manager::create_card(content, folder.as_deref().unwrap_or(""))
 }
 
 /// Get all cards
@@ -154,6 +109,34 @@ pub async fn save_card(card: Card) -> Result<(), String> {
 #[tauri::command]
 pub async fn delete_card(id: String) -> Result<(), String> {
     card_manager::delete_card(&id)
+}
+
+/// Move a card to another folder (empty for none)
+#[tauri::command]
+pub async fn move_card(id: String, folder: String) -> Result<Card, String> {
+    card_manager::move_card(&id, &folder)
+}
+
+/// Folder names, including empty folders
+#[tauri::command]
+pub async fn list_folders() -> Result<Vec<String>, String> {
+    card_manager::list_folders()
+}
+
+#[tauri::command]
+pub async fn create_folder(name: String) -> Result<String, String> {
+    card_manager::create_folder(&name)
+}
+
+#[tauri::command]
+pub async fn rename_folder(from: String, to: String) -> Result<String, String> {
+    card_manager::rename_folder(&from, &to)
+}
+
+/// Delete a folder; its notes move out of it and are kept
+#[tauri::command]
+pub async fn delete_folder(name: String) -> Result<(), String> {
+    card_manager::delete_folder(&name)
 }
 
 /// Reload all cards from file system
@@ -190,131 +173,25 @@ pub async fn save_orb_window_position(x: i32, y: i32) -> Result<(), String> {
 }
 
 // ============================================================================
-// Settings Commands
+// Model Download Commands
 // ============================================================================
 
-/// Get all application settings (model configurations, etc.)
+/// Pull a model from the Ollama library into Ollama
+/// Progress is emitted as 'model-pull-progress' events; returns the model id
 #[tauri::command]
-pub async fn get_all_settings(
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<serde_json::Value, String> {
-    let app_settings = settings.get_all_settings();
-    serde_json::to_value(app_settings).map_err(|e| e.to_string())
-}
-
-/// Set model for a cloud provider
-#[tauri::command]
-pub async fn set_provider_model(
-    provider: String,
-    model: String,
-    is_custom: bool,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    settings
-        .set_provider_model(provider, model, is_custom)
-        .map_err(|e| e.to_string())
-}
-
-/// Set local model configuration
-#[tauri::command]
-pub async fn set_local_model_config(
-    provider: String,
-    repo: String,
-    filename: String,
-    custom_url: Option<String>,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    use crate::settings_manager::LocalModelConfig;
-
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    let config = LocalModelConfig {
-        repo,
-        filename,
-        custom_url,
-    };
-    settings
-        .set_local_model_config(provider, config)
-        .map_err(|e| e.to_string())
-}
-
-/// Set GPU acceleration type
-#[tauri::command]
-pub async fn set_gpu_type(
-    gpu_type: String,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    use crate::keyring_store::GpuType;
-    let gpu = GpuType::from_str(&gpu_type);
-    settings.set_gpu_type(gpu).map_err(|e| e.to_string())
-}
-
-/// Get recommended models for each provider
-#[tauri::command]
-pub async fn get_recommended_models() -> Result<serde_json::Value, String> {
-    let models = serde_json::json!({
-        "openai": [
-            { "id": "gpt-5.2-codex", "name": "GPT-5.2 Codex (Recommended for coding)" },
-            { "id": "o3", "name": "o3 (Deep reasoning)" },
-            { "id": "o4-mini", "name": "o4-mini (Fast reasoning)" },
-            { "id": "gpt-4.1", "name": "GPT-4.1 (1M context)" },
-            { "id": "gpt-4.1-mini", "name": "GPT-4.1 Mini" },
-            { "id": "gpt-4o", "name": "GPT-4o (Multimodal)" },
-        ],
-        "anthropic": [
-            { "id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Recommended)" },
-            { "id": "claude-opus-4-6", "name": "Claude Opus 4.6 (Most capable)" },
-            { "id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5 (Fastest)" },
-        ],
-        "google": [
-            { "id": "gemini-3.1-pro-latest", "name": "Gemini 3.1 Pro (Recommended)" },
-            { "id": "gemini-3.0-deep-think", "name": "Gemini 3 Deep Think (Research)" },
-            { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Large context)" },
-            { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Fast)" },
-        ],
-    });
-    Ok(models)
-}
-
-// ============================================================================
-// Local Model Commands
-// ============================================================================
-
-/// Get status of a local model (downloaded, file size, etc.)
-#[tauri::command]
-pub async fn get_local_model_status(
-    provider: String,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<ModelStatus, String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    local_model::get_model_status(provider, Some(&settings)).map_err(|e| e.to_string())
-}
-
-/// Download a local model from HuggingFace
-/// Progress is emitted as 'local-model-download-progress' events
-/// Completion is emitted as 'local-model-download-complete' event
-#[tauri::command]
-pub async fn download_local_model(
-    provider: String,
+pub async fn pull_model(
+    name: String,
     app: tauri::AppHandle,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    local_model::download_model(&app, provider, Some(&settings))
-        .await
-        .map_err(|e| e.to_string())
+    http: State<'_, HttpClient>,
+) -> Result<String, String> {
+    ollama::pull_model(&app, http.client(), &name).await.map_err(|e| e.to_string())
 }
 
-/// Delete a downloaded local model
+/// Cancel the running model pull
 #[tauri::command]
-pub async fn delete_local_model(
-    provider: String,
-    settings: State<'_, std::sync::Arc<SettingsManager>>,
-) -> Result<(), String> {
-    let provider = AiProvider::from_str(&provider).map_err(|e| e.to_string())?;
-    local_model::delete_model(provider, Some(&settings))
-        .await
-        .map_err(|e| e.to_string())
+pub async fn cancel_model_pull() -> Result<(), String> {
+    ollama::cancel_pull();
+    Ok(())
 }
 
 // ============================================================================
@@ -348,6 +225,73 @@ pub async fn setup_claude_mcp(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn remove_claude_mcp() -> Result<(), String> {
     claude_mcp::remove()
+}
+
+// ============================================================================
+// Assistant Commands
+// ============================================================================
+
+/// Send the conversation (ending with the user's new message) to the assistant
+#[tauri::command]
+pub async fn assistant_send(
+    messages: Vec<serde_json::Value>,
+    context: Option<AssistantContext>,
+    app: tauri::AppHandle,
+    http: State<'_, HttpClient>,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+    hextime: State<'_, HexTime>,
+) -> Result<AssistantTurn, String> {
+    let backend = OllamaBackend::new(http.client(), &settings).await.map_err(|e| e.to_string())?;
+    let calendar = app.try_state::<DbPool>();
+    let ctx = ToolContext {
+        calendar: calendar.as_ref().map(|db| db.inner()),
+        hextime: &hextime,
+        client: http.client(),
+    };
+    assistant::send(&backend, &ctx, &context.unwrap_or_default(), messages).await.map_err(|e| e.to_string())
+}
+
+/// Apply the user's decisions on pending assistant actions and continue
+#[tauri::command]
+pub async fn assistant_confirm(
+    messages: Vec<serde_json::Value>,
+    context: Option<AssistantContext>,
+    decisions: Vec<Decision>,
+    app: tauri::AppHandle,
+    http: State<'_, HttpClient>,
+    settings: State<'_, std::sync::Arc<SettingsManager>>,
+    hextime: State<'_, HexTime>,
+) -> Result<AssistantTurn, String> {
+    let backend = OllamaBackend::new(http.client(), &settings).await.map_err(|e| e.to_string())?;
+    let calendar = app.try_state::<DbPool>();
+    let ctx = ToolContext {
+        calendar: calendar.as_ref().map(|db| db.inner()),
+        hextime: &hextime,
+        client: http.client(),
+    };
+    assistant::confirm(&backend, &ctx, &context.unwrap_or_default(), messages, decisions).await.map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// HexTime Commands
+// ============================================================================
+
+/// Start the HexTime sidecar if needed and return the URL of its UI
+#[tauri::command]
+pub async fn hextime_start(
+    hextime: State<'_, HexTime>,
+    http: State<'_, HttpClient>,
+) -> Result<String, String> {
+    hextime
+        .start(http.client())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Save a PDF exported from the HexTime view; returns where it was saved
+#[tauri::command]
+pub async fn save_pdf(filename: String, bytes: Vec<u8>, app: tauri::AppHandle) -> Result<String, String> {
+    crate::downloads::save_pdf(&app, &filename, &bytes).map(|path| path.display().to_string())
 }
 
 /// Open cards directory in file explorer

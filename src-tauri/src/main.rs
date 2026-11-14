@@ -4,9 +4,11 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use hex_sticky_note::ai_manager::AiManager;
+use hex_sticky_note::calendar;
 use hex_sticky_note::commands::*;
-use hex_sticky_note::local_inference;
+use hex_sticky_note::downloads;
+use hex_sticky_note::hextime::HexTime;
+use hex_sticky_note::http::HttpClient;
 use hex_sticky_note::settings_manager::SettingsManager;
 use std::sync::Arc;
 use tauri::Manager;
@@ -17,11 +19,13 @@ fn main() {
 
     log::info!("Starting HexStickyNote...");
 
-    // Initialize llama backend for local models (non-fatal if it fails)
-    if local_inference::init_backend() {
-        log::info!("Llama backend initialized");
-    } else {
-        log::warn!("Llama backend not available - local AI features disabled");
+    // WebKitGTK's DMABUF renderer shows blank or broken transparent windows on
+    // many Linux setups (notably NVIDIA + Wayland). Must be set before GTK starts.
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
     }
 
     // Initialize settings manager
@@ -30,33 +34,39 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(AiManager::new(settings.clone()))
+        .plugin(tauri_plugin_notification::init())
+        .manage(HttpClient::new())
         .manage(settings)
+        .manage(HexTime::default())
+        .setup(|app| {
+            downloads::create_main_window(app)?;
+
+            // A calendar failure must not take the notes down with it
+            match calendar::init(app) {
+                Ok(()) => log::info!("Calendar initialized"),
+                Err(e) => log::error!("Calendar unavailable: {}", e),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            // API Key Management
-            save_api_key,
-            delete_api_key,
-            get_providers,
-            set_active_provider,
-            get_active_provider,
-            // AI Streaming
-            invoke_ai_stream,
+            // Model Selection
+            list_local_models,
+            get_active_model,
+            set_active_model,
             // Card Storage
             create_card,
             get_cards,
             save_card,
             delete_card,
             reload_cards,
-            // Settings
-            get_all_settings,
-            set_provider_model,
-            set_local_model_config,
-            set_gpu_type,
-            get_recommended_models,
-            // Local Models
-            get_local_model_status,
-            download_local_model,
-            delete_local_model,
+            move_card,
+            list_folders,
+            create_folder,
+            rename_folder,
+            delete_folder,
+            // Model Downloads (Ollama)
+            pull_model,
+            cancel_model_pull,
             // Window State
             load_window_state,
             save_main_window_position,
@@ -69,18 +79,27 @@ fn main() {
             remove_claude_mcp,
             // File System
             open_cards_directory,
+            // Calendar (HexCalendar)
+            calendar::commands::calendar::get_calendar_data,
+            calendar::commands::calendar::create_event,
+            calendar::commands::calendar::update_event,
+            calendar::commands::calendar::delete_event,
+            calendar::commands::calendar::get_day_notes,
+            calendar::commands::calendar::save_day_notes,
+            calendar::commands::notifications::schedule_reminder,
+            calendar::commands::notifications::dismiss_reminder,
+            // Time tracking (HexTime sidecar)
+            hextime_start,
+            save_pdf,
+            // Assistant
+            assistant_send,
+            assistant_confirm,
         ])
-        .setup(|app| {
-            // Route orb window to /orb page
-            if let Some(orb_window) = app.get_webview_window("orb") {
-                let _ = orb_window.eval("window.location.href = '/orb'");
-                log::info!("Orb window routed to /orb");
-            } else {
-                log::warn!("Orb window not found during setup");
+        .build(tauri::generate_context!())
+        .expect("Error while building HexStickyNote")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<HexTime>().shutdown();
             }
-
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("Error while running HexStickyNote");
+        });
 }

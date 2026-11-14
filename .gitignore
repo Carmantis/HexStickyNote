@@ -41,3 +41,6 @@ src-tauri/*.dmg
 .Claude
 CLAUDE.md
 GEMINI.md
+
+# HexTime sidecar (built by sidecar/hextime/build.sh)
+src-tauri/binaries/

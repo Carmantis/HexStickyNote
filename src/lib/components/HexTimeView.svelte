@@ -1,0 +1,150 @@
+<script lang="ts">
+  /**
+   * HexTime View - time tracking
+   *
+   * HexTime runs as a sidecar server (see src-tauri/src/hextime.rs); this view
+   * starts it on demand and shows the UI it serves.
+   */
+
+  import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { HEXTIME_CHANGED_EVENT } from "$lib/stores/assistantStore";
+
+  let url: string | null = null;
+  /** Bumped to reload the page after the assistant changed the timer */
+  let reloadKey = 0;
+  let frame: HTMLIFrameElement | undefined;
+  let error: string | null = null;
+  let isStarting = false;
+
+  async function start() {
+    isStarting = true;
+    error = null;
+    try {
+      url = await invoke<string>("hextime_start");
+    } catch (e) {
+      error = String(e);
+    } finally {
+      isStarting = false;
+    }
+  }
+
+  /** A file from HexTime's save_file bridge (see src-tauri/src/downloads.rs) */
+  async function handleMessage(event: MessageEvent) {
+    const message = event.data;
+    if (
+      message?.type !== "hextime-save-file" ||
+      !url ||
+      event.source !== frame?.contentWindow ||
+      event.origin !== new URL(url).origin
+    ) {
+      return;
+    }
+
+    let error: string | null = null;
+    try {
+      const bytes = Array.from(atob(message.data), (c) => c.charCodeAt(0));
+      await invoke("save_pdf", { filename: message.filename, bytes });
+    } catch (e) {
+      error = String(e);
+    }
+    frame?.contentWindow?.postMessage(
+      { type: "hextime-save-file-result", id: message.id, error },
+      event.origin,
+    );
+  }
+
+  onMount(() => {
+    start();
+    const reload = () => (reloadKey += 1);
+    window.addEventListener(HEXTIME_CHANGED_EVENT, reload);
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener(HEXTIME_CHANGED_EVENT, reload);
+      window.removeEventListener("message", handleMessage);
+    };
+  });
+</script>
+
+<div class="hextime-view">
+  {#if url}
+    {#key reloadKey}
+      <iframe bind:this={frame} src={url} title="HexTime"></iframe>
+    {/key}
+  {:else if error}
+    <div class="status">
+      <p class="status-title">HexTime could not be started</p>
+      <p class="status-detail">{error}</p>
+      <button class="retry-button" on:click={start} disabled={isStarting}>Retry</button>
+    </div>
+  {:else}
+    <div class="status">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="status-detail">Starting HexTime…</p>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .hextime-view {
+    height: 100%;
+    background: var(--bg-primary);
+  }
+
+  iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
+  .status {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  .status-title {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .status-detail {
+    max-width: 32rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    word-break: break-word;
+  }
+
+  .retry-button {
+    padding: 0.5rem 1.25rem;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+
+  .retry-button:disabled {
+    opacity: 0.5;
+  }
+
+  .spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

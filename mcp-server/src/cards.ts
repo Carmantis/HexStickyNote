@@ -56,43 +56,71 @@ function sanitizeFilename(title: string): string {
   return sanitized;
 }
 
-// Get unique filename, handling duplicates
-async function getUniqueFilename(cardsDir: string, baseName: string): Promise<string> {
-  const filePath = path.join(cardsDir, `${baseName}.md`);
+async function exists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
-    // File exists, add number suffix
-    let counter = 2;
-    while (counter < 1000) {
-      const numberedName = `${baseName} (${counter})`;
-      const numberedPath = path.join(cardsDir, `${numberedName}.md`);
-      try {
-        await fs.access(numberedPath);
-        counter++;
-      } catch {
-        return `${numberedName}.md`;
-      }
-    }
-    // Safety limit reached, use UUID
-    return `${uuidv4()}.md`;
+    return true;
   } catch {
-    // File doesn't exist, use base name
-    return `${baseName}.md`;
+    return false;
   }
 }
 
+// `<base>.md` in `dir`, or `<base> (2).md` and so on when that is taken.
+// `keep` is the note's current file: its own name does not count as taken.
+async function getUniquePath(dir: string, baseName: string, keep?: string): Promise<string> {
+  const isFree = async (candidate: string) => candidate === keep || !(await exists(candidate));
+
+  const plain = path.join(dir, `${baseName}.md`);
+  if (await isFree(plain)) return plain;
+  for (let counter = 2; counter <= 1000; counter++) {
+    const numbered = path.join(dir, `${baseName} (${counter}).md`);
+    if (await isFree(numbered)) return numbered;
+  }
+  return path.join(dir, `${uuidv4()}.md`);
+}
+
+// A folder name as it is used on disk; "" stands for the cards directory itself
+function cleanFolderName(name: string | undefined): string {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith(".")) {
+    throw new Error(`"${trimmed}" is not a valid folder name`);
+  }
+  return sanitizeFilename(trimmed);
+}
+
+// Every note file with the folder (subdirectory, one level deep) it is in
+async function noteFiles(cardsDir: string): Promise<{ folder: string; filePath: string }[]> {
+  const files: { folder: string; filePath: string }[] = [];
+  const entries = await fs.readdir(cardsDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push({ folder: "", filePath: path.join(cardsDir, entry.name) });
+    } else if (entry.isDirectory() && !entry.name.startsWith(".")) {
+      const folderDir = path.join(cardsDir, entry.name);
+      for (const child of await fs.readdir(folderDir, { withFileTypes: true })) {
+        if (child.isFile() && child.name.endsWith(".md")) {
+          files.push({ folder: entry.name, filePath: path.join(folderDir, child.name) });
+        }
+      }
+    }
+  }
+  return files;
+}
+
 // Find existing file by ID in front matter
-async function findFileByID(cardsDir: string, id: string): Promise<string | null> {
+async function findFileByID(
+  cardsDir: string,
+  id: string
+): Promise<{ folder: string; filePath: string } | null> {
   try {
-    const entries = await fs.readdir(cardsDir);
-    for (const entry of entries) {
-      if (!entry.endsWith('.md')) continue;
+    for (const file of await noteFiles(cardsDir)) {
       try {
-        const filePath = path.join(cardsDir, entry);
-        const content = await fs.readFile(filePath, 'utf-8');
+        const content = await fs.readFile(file.filePath, 'utf-8');
         const { metadata } = parseMarkdownWithFrontmatter(content);
         if (metadata.id === id) {
-          return filePath;
+          return file;
         }
       } catch {
         continue;
@@ -153,23 +181,21 @@ async function ensureCardsDirectory(): Promise<string> {
 // Public API
 // ============================================================================
 
-export async function createCard(content: string): Promise<Card> {
+export async function createCard(content: string, folder?: string): Promise<Card> {
   const now = Math.floor(Date.now() / 1000);
   const card: Card = {
     id: uuidv4(),
     content,
     created_at: now,
     updated_at: now,
+    folder: cleanFolderName(folder),
   };
 
-  const dir = await ensureCardsDirectory();
+  const dir = path.join(await ensureCardsDirectory(), card.folder);
+  await fs.mkdir(dir, { recursive: true });
 
   // Generate filename from content title
-  const title = extractTitleFromContent(content);
-  const sanitized = sanitizeFilename(title);
-  const filename = await getUniqueFilename(dir, sanitized);
-  const filePath = path.join(dir, filename);
-
+  const filePath = await getUniquePath(dir, sanitizeFilename(extractTitleFromContent(content)));
   await fs.writeFile(filePath, createMarkdownWithFrontmatter(card), "utf-8");
 
   return card;
@@ -177,13 +203,10 @@ export async function createCard(content: string): Promise<Card> {
 
 export async function listCards(): Promise<Card[]> {
   const dir = await ensureCardsDirectory();
-  const entries = await fs.readdir(dir);
   const cards: Card[] = [];
 
-  for (const entry of entries) {
-    if (!entry.endsWith(".md")) continue;
+  for (const { folder, filePath } of await noteFiles(dir)) {
     try {
-      const filePath = path.join(dir, entry);
       const fileContent = await fs.readFile(filePath, "utf-8");
       const { metadata, content } = parseMarkdownWithFrontmatter(fileContent);
       cards.push({
@@ -191,9 +214,10 @@ export async function listCards(): Promise<Card[]> {
         content,
         created_at: metadata.created_at,
         updated_at: metadata.updated_at,
+        folder,
       });
     } catch (err) {
-      console.error(`Failed to load card from ${entry}: ${err}`);
+      console.error(`Failed to load card from ${filePath}: ${err}`);
     }
   }
 
@@ -204,29 +228,30 @@ export async function readCard(id: string): Promise<Card> {
   const dir = await ensureCardsDirectory();
 
   // Find file by ID in front matter
-  const filePath = await findFileByID(dir, id);
-  if (!filePath) {
+  const file = await findFileByID(dir, id);
+  if (!file) {
     throw new Error(`Card with ID ${id} not found`);
   }
 
-  const fileContent = await fs.readFile(filePath, "utf-8");
+  const fileContent = await fs.readFile(file.filePath, "utf-8");
   const { metadata, content } = parseMarkdownWithFrontmatter(fileContent);
   return {
     id: metadata.id,
     content,
     created_at: metadata.created_at,
     updated_at: metadata.updated_at,
+    folder: file.folder,
   };
 }
 
 export async function updateCard(id: string, content: string): Promise<Card> {
   const dir = await ensureCardsDirectory();
 
-  // Find old file path
-  const oldPath = await findFileByID(dir, id);
-  if (!oldPath) {
+  const file = await findFileByID(dir, id);
+  if (!file) {
     throw new Error(`Card with ID ${id} not found`);
   }
+  const oldPath = file.filePath;
 
   const fileContent = await fs.readFile(oldPath, "utf-8");
   const { metadata } = parseMarkdownWithFrontmatter(fileContent);
@@ -236,18 +261,18 @@ export async function updateCard(id: string, content: string): Promise<Card> {
     content,
     created_at: metadata.created_at,
     updated_at: Math.floor(Date.now() / 1000),
+    folder: file.folder,
   };
 
-  // Generate new filename from new content title
-  const title = extractTitleFromContent(content);
-  const sanitized = sanitizeFilename(title);
-  const filename = await getUniqueFilename(dir, sanitized);
-  const newPath = path.join(dir, filename);
+  // The note stays in its folder; the file is renamed when the title changed
+  const newPath = await getUniquePath(
+    path.dirname(oldPath),
+    sanitizeFilename(extractTitleFromContent(content)),
+    oldPath
+  );
 
-  // Write to new file
   await fs.writeFile(newPath, createMarkdownWithFrontmatter(updated), "utf-8");
 
-  // If filename changed, delete old file
   if (oldPath !== newPath) {
     try {
       await fs.unlink(oldPath);
@@ -263,10 +288,10 @@ export async function deleteCard(id: string): Promise<void> {
   const dir = await ensureCardsDirectory();
 
   // Find file by ID
-  const filePath = await findFileByID(dir, id);
-  if (!filePath) {
+  const file = await findFileByID(dir, id);
+  if (!file) {
     throw new Error(`Card with ID ${id} not found`);
   }
 
-  await fs.unlink(filePath);
+  await fs.unlink(file.filePath);
 }

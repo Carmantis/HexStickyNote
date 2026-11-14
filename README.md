@@ -1,21 +1,46 @@
 # HexStickyNote
 
-A modern desktop note-taking application with AI integration and a unique 3D carousel interface. Create, edit, and enhance your notes using powerful AI models – all while keeping your data and API keys secure on your local machine.
+A modern desktop workspace for sticky notes, a calendar and time tracking, with a unique 3D carousel interface and a local AI assistant. The assistant runs on [Ollama](https://ollama.com) on your own machine, or you can let Claude manage your notes through MCP – your data stays on your computer.
 
 ![HexStickyNote Screenshot](docs/image.png)
 
 ## Features
 
 - **3D Carousel Interface**: Navigate your notes in an intuitive 3D carousel with smooth animations.
-- **AI-Powered Writing**: Enhance your notes with AI assistance from multiple providers:
-  - **Local LLM**: Run models like **Llama-Poro-2 8B Instruct** (Finnish) or **Meta-Llama-3.1 8B Instruct** (English) completely offline.
-  - **Cloud Providers**: OpenAI (o3, GPT-5.2 Codex, GPT-4.1), Anthropic (Claude Opus/Sonnet 4.6), and Google (Gemini 3.1 Pro, Gemini 3 Deep Think).
-- **GPU Acceleration**: Built-in support for **Vulkan** (Universal), **CUDA** (NVIDIA), and **ROCm** (AMD) to speed up local AI.
-- **Finnish Language Support**: Optimized prompts and UI for Finnish users.
+- **Calendar and Time Tracking**: HexCalendar and HexTime built in, one tab away from your notes.
+- **AI Assistant**: Ask about your notes, events and tracked time, or ask it to create events, write notes or start the timer. Every change waits for your approval.
 - **Markdown Editor**: Full-featured CodeMirror 6 editor with syntax highlighting and live preview.
 - **Claude Desktop Integration**: Built-in **MCP (Model Context Protocol)** server that allows Claude Desktop to read and manage your notes.
-- **Secure Storage**: API keys are stored in Windows Credential Locker (never in plaintext).
-- **Portable Data**: Notes are stored as human-readable `.md` files with YAML metadata.
+- **Folders**: Sort notes into folders and switch between them from the folder menu in the top bar.
+- **Portable Data**: Notes are stored as human-readable `.md` files with YAML metadata; each folder is a
+  subdirectory of the notes directory.
+
+## Calendar and Time Tracking
+
+The HUD has three views, switched from the tabs in the top bar:
+
+- **Notes** – the sticky note carousel.
+- **Calendar** – HexCalendar (month, week and day views, day notes and reminders). It uses the same
+  database as the standalone HexCalendar.
+- **Time** – HexTime time tracking. HexTime is a Python app; it is bundled as a sidecar binary that
+  starts when the tab is first opened and stops with HexStickyNote. It uses the same database as the
+  standalone HexTime.
+
+## AI Assistant
+
+Open the assistant from the chat button in the top bar; it opens as a box at the bottom of the
+window (drag its top edge to resize it). It can look up notes, calendar events and
+time entries, and propose changes: creating or editing notes, creating events, and starting or
+stopping the timer. Each change is shown as a card that you approve or decline; nothing is deleted.
+
+The assistant runs on a local [Ollama](https://ollama.com) (`OLLAMA_HOST` is respected). In
+**Settings** -> **AI Model**:
+
+- **Model in use**: pick an installed model. The assistant needs a model with tool support, such as
+  `qwen3:8b` or `llama3.1:8b`.
+- **Add model from the Ollama library**: type a name from [ollama.com/library](https://ollama.com/library)
+  or a Hugging Face GGUF repository (`hf.co/user/repo:Q4_K_M`) and click **Download**; the model is
+  pulled into Ollama.
 
 ## Installation
 
@@ -24,7 +49,18 @@ A modern desktop note-taking application with AI integration and a unique 3D car
 #### Prerequisites
 - [Node.js](https://nodejs.org/) (v18+)
 - [Rust](https://rustup.rs/) (Stable)
-- [Vulkan SDK](https://vulkan.lunarg.com/) (Optional, for GPU acceleration)
+- [Ollama](https://ollama.com) for the assistant
+
+#### Linux
+Install the Tauri system libraries:
+```bash
+# Arch
+sudo pacman -S --needed base-devel webkit2gtk-4.1 libayatana-appindicator librsvg openssl
+
+# Debian / Ubuntu
+sudo apt install build-essential libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+  libssl-dev libxdo-dev
+```
 
 #### Setup
 1. Clone the repository:
@@ -38,41 +74,26 @@ A modern desktop note-taking application with AI integration and a unique 3D car
    ```
 3. Run in development mode:
    ```bash
-   # Standard (CPU)
    npm run tauri dev
-
-   # With GPU Acceleration (Vulkan)
-   npm run dev:gpu
    ```
-
-## Local AI & GPU Support
-
-HexStickyNote supports running tekoäly (AI) locally on your computer.
-
-### Recommended Models
-- **Poro 2 8B Instruct**: Excellent for general writing and help in Finnish.
-- **Llama 3.1 8B Instruct**: Powerful general-purpose model for English content.
-
-### GPU Acceleration
-To use your graphics card for faster AI:
-1. Ensure you have the **Vulkan SDK** or appropriate drivers installed.
-2. Build or run the app with the GPU feature enabled:
-   ```bash
-   npm run dev:gpu
-   ```
-3. In the app, go to **Settings** -> **Local AI Models** and set **GPU Acceleration** to **Enabled**.
-4. You will see a "Using GPU" indicator in the prompt bar when the AI is active.
 
 ## Claude Desktop (MCP)
 
-HexStickyNote includes an MCP server. You can connect it to Claude Desktop to let Claude manage your notes:
+HexStickyNote includes an MCP server. You can connect it to Claude Desktop to let Claude manage your notes, calendar and time tracking:
 
 1. Open **Settings** in HexStickyNote.
 2. Scroll to **Claude Desktop**.
 3. Click **Add to Claude Desktop**.
 4. Restart Claude Desktop.
 
-Claude can now use tools like `create_note`, `list_notes`, and `read_note` to help you manage your workspace.
+Claude can then use these tools (Claude Desktop asks before running them):
+
+- **Notes**: `create_note`, `list_notes`, `read_note`, `update_note`, `delete_note`
+- **Calendar**: `list_events`, `create_event`
+- **Time tracking**: `list_time_entries`, `get_timer`, `start_timer`, `stop_timer`
+
+The time tracking tools use the HexTime server that HexStickyNote runs; when HexStickyNote is closed,
+the MCP server starts HexTime itself. The calendar tools need Node.js 22.13 or newer (`node:sqlite`).
 
 **Tip**: When Claude creates or modifies notes, click the refresh button (🔄) in HexStickyNote to see the changes immediately.
 
@@ -81,12 +102,30 @@ Claude can now use tools like `create_note`, `list_notes`, and `read_note` to he
 
 To create a production installer:
 ```bash
-# Standard build
 npm run tauri build
-
-# Build with GPU (Vulkan) support
-npm run build:gpu
 ```
+
+To include HexTime, build its sidecar first (needs [uv](https://docs.astral.sh/uv/) and a HexTime
+checkout next to this repository, or set `HEXTIME_DIR`):
+```bash
+npm run build:full          # builds the HexTime sidecar, then the app
+```
+In development, `npm run build:hextime` once is enough; `npm run tauri dev` finds the sidecar in
+`src-tauri/binaries/`.
+
+Installers are written to `src-tauri/target/release/bundle/` (`.msi`/`.exe` on Windows,
+`.deb`/`.rpm` on Linux).
+
+### Arch Linux
+
+`packaging/arch/PKGBUILD` turns the `.deb` build into a pacman package:
+```bash
+npm run build:full -- --bundles deb  # or without HexTime: npm run tauri build -- --bundles deb
+cd packaging/arch
+makepkg -si
+```
+After installing, open **Settings** -> **Claude Desktop** once and click **Add to Claude Desktop**
+so Claude uses the installed MCP server path.
 
 ## License
 MIT - HexStickyNote

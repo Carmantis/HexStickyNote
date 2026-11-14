@@ -4,22 +4,92 @@
    */
 
   import { onMount, onDestroy } from "svelte";
+  import { fly } from "svelte/transition";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { invoke } from "@tauri-apps/api/core";
   import { cardStore, editingCard } from "$lib/stores/cardStore";
   import { settingsStore } from "$lib/stores/settingsStore";
   import CardCarousel from "./CardCarousel.svelte";
   import Settings from "./Settings.svelte";
+  import CalendarView from "$lib/calendar/CalendarView.svelte";
+  import HexTimeView from "./HexTimeView.svelte";
+  import AssistantPanel from "./AssistantPanel.svelte";
+  import FolderMenu from "./FolderMenu.svelte";
 
   export let isOpen: boolean = false;
 
+  type View = "notes" | "calendar" | "time";
+  const VIEWS: View[] = ["notes", "calendar", "time"];
+  const VIEW_KEY = "hexstickynote.view";
+
+  let view: View = loadView();
   let showSettings = false;
+  let showAssistant = false;
+
+  // Height of the assistant box at the bottom; dragged from its top edge
+  const ASSISTANT_HEIGHT_KEY = "hexstickynote.assistantHeight";
+  const ASSISTANT_MIN_HEIGHT = 160;
+  let assistantHeight = loadAssistantHeight();
   let isGhostMode = false;
   $: editing = $editingCard;
 
   onMount(async () => {
-    await Promise.all([cardStore.loadCards(), settingsStore.loadProviders()]);
+    await Promise.all([cardStore.loadCards(), settingsStore.loadModels()]);
   });
+
+  function loadView(): View {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY) as View | null;
+      return saved && VIEWS.includes(saved) ? saved : "notes";
+    } catch {
+      return "notes";
+    }
+  }
+
+  function loadAssistantHeight(): number {
+    try {
+      const saved = Number(localStorage.getItem(ASSISTANT_HEIGHT_KEY));
+      return saved >= ASSISTANT_MIN_HEIGHT ? saved : 280;
+    } catch {
+      return 280;
+    }
+  }
+
+  /** Room left for the box: the header and some of the notes stay visible */
+  function maxAssistantHeight(): number {
+    return Math.max(ASSISTANT_MIN_HEIGHT, window.innerHeight - 320);
+  }
+
+  function startAssistantResize(event: PointerEvent) {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = assistantHeight;
+
+    const move = (e: PointerEvent) => {
+      const height = startHeight + (startY - e.clientY);
+      assistantHeight = Math.round(Math.min(maxAssistantHeight(), Math.max(ASSISTANT_MIN_HEIGHT, height)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      try {
+        localStorage.setItem(ASSISTANT_HEIGHT_KEY, String(assistantHeight));
+      } catch {
+        // Not remembered; the box keeps its size until closed
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  }
+
+  function setView(next: View) {
+    view = next;
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Not remembered; the view still switches
+    }
+  }
 
   function startResize(direction: string) {
     getCurrentWindow().startResizeDragging(direction as any);
@@ -50,7 +120,7 @@
 
   function handleHeaderMouseDown(event: MouseEvent) {
     // Only drag on left click and if not clicking a button
-    if (event.button === 0 && !(event.target as Element).closest('button')) {
+    if (event.button === 0 && !(event.target as Element).closest('button, [data-no-drag]')) {
       getCurrentWindow().startDragging();
     }
   }
@@ -77,14 +147,6 @@
     }
   }
 
-  async function handleOpenCardsFolder() {
-    try {
-      await invoke('open_cards_directory');
-    } catch (e) {
-      console.error('Failed to open cards directory:', e);
-    }
-  }
-
   async function handleRefreshCards() {
     await cardStore.reloadCards();
   }
@@ -104,22 +166,25 @@
 
     <header class="hud-header" on:mousedown={handleHeaderMouseDown}>
       <div class="hud-left-actions">
-        <button
-          class="action-button"
-          on:click|stopPropagation={handleOpenCardsFolder}
-          title="Open Cards Folder"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
+        {#if view === "notes"}
+        <FolderMenu />
+
+        {#if !editing}
+          <button
+            class="action-button"
+            class:active={$cardStore.layout === "grid"}
+            on:click|stopPropagation={() => cardStore.toggleLayout()}
+            title={$cardStore.layout === "grid" ? "Show as carousel" : "Show all as tiles"}
+            aria-pressed={$cardStore.layout === "grid"}
           >
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+          </button>
+        {/if}
 
         <button
           class="action-button"
@@ -139,29 +204,56 @@
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
           </svg>
         </button>
+        {/if}
       </div>
 
-      <h1 class="hud-title">
-        <span class="title-icon">
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polygon
-              points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
-            />
+      <nav class="view-tabs" aria-label="Views">
+        <button
+          class="view-tab"
+          class:active={view === "notes"}
+          on:click|stopPropagation={() => setView("notes")}
+          title="Notes"
+          aria-pressed={view === "notes"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" />
+            <path d="M15 3v6h6" />
           </svg>
-        </span>
-        HexStickyNote
-      </h1>
+          <span>Notes</span>
+        </button>
+        <button
+          class="view-tab"
+          class:active={view === "calendar"}
+          on:click|stopPropagation={() => setView("calendar")}
+          title="Calendar"
+          aria-pressed={view === "calendar"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
+          <span>Calendar</span>
+        </button>
+        <button
+          class="view-tab"
+          class:active={view === "time"}
+          on:click|stopPropagation={() => setView("time")}
+          title="Time tracking"
+          aria-pressed={view === "time"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="13" r="8" />
+            <path d="M12 9v4l2 2M10 2h4" />
+          </svg>
+          <span>Time</span>
+        </button>
+      </nav>
 
       <div class="hud-actions">
         <!-- Action Buttons (Note mgmt) -->
-        {#if editing}
+        {#if view !== "notes"}
+          <!-- Calendar and HexTime have their own toolbars -->
+        {:else if editing}
           <button
             class="action-button delete-button"
             on:click|stopPropagation={handleDeleteCard}
@@ -184,6 +276,18 @@
             </svg>
           </button>
         {/if}
+
+        <button
+          class="action-button"
+          class:active={showAssistant}
+          on:click|stopPropagation={() => (showAssistant = !showAssistant)}
+          title="Assistant"
+          aria-pressed={showAssistant}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
 
         <button
           class="action-button"
@@ -219,8 +323,30 @@
     </header>
 
     <main class="hud-content">
-      <CardCarousel />
+      {#if view === "calendar"}
+        <div class="view-panel">
+          <CalendarView />
+        </div>
+      {:else if view === "time"}
+        <div class="view-panel">
+          <HexTimeView />
+        </div>
+      {:else}
+        <CardCarousel />
+      {/if}
     </main>
+
+    {#if showAssistant}
+      <div
+        class="assistant-dock"
+        style="height: {Math.min(assistantHeight, maxAssistantHeight())}px"
+        transition:fly={{ y: 40, duration: 200 }}
+      >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="assistant-resize" on:pointerdown={startAssistantResize} title="Drag to resize"></div>
+        <AssistantPanel {view} on:close={() => (showAssistant = false)} />
+      </div>
+    {/if}
 
     {#if showSettings}
       <Settings on:close={handleSettingsClose} />
@@ -253,11 +379,13 @@
   }
 
   .hud-header {
-    display: flex;
+    /* Tabs stay centred; the side columns can never run under them */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    justify-content: space-between;
+    gap: 0.75rem;
     padding: 0.75rem 1.5rem;
-    width: 600px;
+    width: min(800px, calc(100% - 3rem));
     margin: 1.5rem auto 0;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--border-radius);
@@ -269,6 +397,8 @@
     /* Sallitaan klikkaukset headeriin */
     pointer-events: auto;
     position: relative;
+    /* Above the notes and the assistant, so the folder menu opens over them */
+    z-index: 60;
     min-height: 60px;
     box-shadow: var(--shadow-md);
   }
@@ -305,35 +435,52 @@
 
   .hud-left-actions {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    z-index: 2;
   }
 
-  .hud-title {
-    font-size: 1.1rem;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    font-weight: 600;
+  .view-tabs {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    white-space: nowrap;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    z-index: 1;
   }
 
-  .title-icon {
-    color: var(--accent-primary);
+  .view-tab {
     display: flex;
     align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 7px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .view-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .view-tab.active {
+    background: var(--accent-primary);
+    color: white;
   }
 
   .hud-actions {
     display: flex;
+    justify-content: flex-end;
     gap: 0.5rem;
-    margin-left: auto;
     z-index: 2;
   }
 
@@ -360,6 +507,31 @@
     color: var(--text-primary);
   }
 
+  .action-button.active {
+    background: var(--accent-primary);
+    color: white;
+  }
+
+  /* Low box under the notes, as wide as the top bar; the content above shrinks */
+  .assistant-dock {
+    position: relative;
+    flex-shrink: 0;
+    width: min(800px, calc(100% - 3rem));
+    margin: 0.75rem auto 1.5rem;
+    z-index: 50;
+    pointer-events: auto;
+  }
+
+  .assistant-resize {
+    position: absolute;
+    top: -6px;
+    left: 1rem;
+    right: 1rem;
+    height: 10px;
+    z-index: 1;
+    cursor: ns-resize;
+  }
+
   .delete-button:hover {
     color: #ef4444;
     background: rgba(239, 68, 68, 0.1);
@@ -372,7 +544,17 @@
 
   .hud-content {
     flex: 1;
+    min-height: 0;
     overflow: hidden;
     pointer-events: auto; /* Sisältö pitää olla klikattavissa */
+  }
+
+  .view-panel {
+    height: calc(100% - 2.5rem);
+    margin: 1rem 1.5rem 1.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
   }
 </style>

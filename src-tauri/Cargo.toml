@@ -12,15 +12,16 @@ tauri-build = { version = "2", features = [] }
 # Tauri v2
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
-# HTTP client with streaming support
+# HTTP client with streaming support (Ollama API, HexTime sidecar)
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
-# Secure credential storage (Windows Credential Locker)
-keyring = { version = "3", features = ["windows-native"] }
+# Calendar storage (HexCalendar)
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -51,15 +52,10 @@ env_logger = "0.11"
 # Directory utilities for persistent storage
 directories = "5"
 
-# Local LLM inference with GGUF models
-llama-cpp-2 = "0.1"
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-cuda = []
-vulkan = []
-rocm = []
 
 [profile.release]
 panic = "abort"

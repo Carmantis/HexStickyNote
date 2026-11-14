@@ -11,7 +11,6 @@
   import DOMPurify from 'dompurify';
   import { cardStore, getCardMode, type Card } from '$lib/stores/cardStore';
   import Editor from './Editor.svelte';
-  import AiPromptBar from './AiPromptBar.svelte';
 
   // Props
   export let card: Card;
@@ -21,7 +20,6 @@
   // Local state
   let editorContent = card.content;
   let cardElement: HTMLElement;
-  let isAiStreaming = false;
 
   // Sync editor content if card prop updates from outside (e.g. backend tool refresh)
   $: if (card.content !== editorContent) {
@@ -63,6 +61,9 @@
 
   // Handle click outside -> exit edit mode
   function handleClickOutside(event: MouseEvent) {
+    // Chatting with the assistant or moving the note to a folder keeps it open
+    if ((event.target as Element | null)?.closest?.('.assistant-panel, .folder-menu')) return;
+
     if ($mode === 'edit' && cardElement && !cardElement.contains(event.target as Node)) {
       cardStore.exitEditMode(card.id);
     }
@@ -74,27 +75,11 @@
     cardStore.updateCardContent(card.id, content);
   }
 
-  // Handle AI response chunks
-  function handleAiChunk(chunk: string) {
-    // If starting a new stream, REPLACE content instead of appending
-    if (!isAiStreaming) {
-      isAiStreaming = true;
-      editorContent = chunk;
-      cardStore.updateCardContent(card.id, chunk);
-    } else {
-      editorContent += chunk;
-      cardStore.appendToCard(card.id, chunk);
-    }
-  }
-
-  function handleAiDone() {
-    isAiStreaming = false;
-  }
-
   // Handle keyboard shortcuts
   function handleKeydown(event: KeyboardEvent) {
     // Escape to exit edit mode
-    if (event.key === 'Escape' && $mode === 'edit') {
+    // (Escape that closed a menu has been handled already)
+    if (event.key === 'Escape' && $mode === 'edit' && !event.defaultPrevented) {
       cardStore.exitEditMode(card.id);
     }
 
@@ -136,12 +121,6 @@
       <Editor
         content={editorContent}
         on:change={(e) => handleEditorChange(e.detail)}
-      />
-      <AiPromptBar
-        context={editorContent}
-        on:chunk={(e) => handleAiChunk(e.detail)}
-        on:done={handleAiDone}
-        on:error={handleAiDone}
       />
     </div>
   {/if}
