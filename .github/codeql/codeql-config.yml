@@ -1,0 +1,10 @@
+name: HexStickyNote CodeQL
+
+# Generated bundles of third-party code: CodeQL would report the libraries'
+# internals (e.g. zod compiling its validators with `new Function`) as if they
+# were this repository's code. The sources they are built from are scanned.
+paths-ignore:
+  - src-tauri/resources/hexstickynote-mcp.mjs
+  - mcp-server/bundle
+  - mcp-server/dist
+  - build
