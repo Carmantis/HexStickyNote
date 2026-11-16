@@ -1,0 +1,101 @@
+name: CI
+
+# Every pull request and every push to main. The job names are the required
+# status checks of the main branch's ruleset: rename them there too.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev build-essential
+
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      # Tauri embeds the built frontend, so it has to exist before compiling
+      - name: Build the frontend
+        run: npm ci && npm run build
+
+      - name: Tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Types and Svelte
+        run: npm run check
+      - name: Build
+        run: npm run build
+
+  mcp:
+    name: MCP server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
+      - name: Build
+        working-directory: mcp-server
+        run: npm ci && npm run build
+      # The app ships src-tauri/resources/hexstickynote-mcp.mjs; a change in
+      # mcp-server/src without copying the new bundle there would ship the old one
+      - name: The bundled copy is up to date
+        run: |
+          cmp mcp-server/bundle/hexstickynote-mcp.mjs src-tauri/resources/hexstickynote-mcp.mjs || {
+            echo "::error::Run 'npm run build' in mcp-server and copy bundle/hexstickynote-mcp.mjs to src-tauri/resources/"
+            exit 1
+          }
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Build with broken links as errors
+        working-directory: docs
+        run: uvx --with mkdocs-material --with mkdocs-awesome-nav mkdocs build --strict
