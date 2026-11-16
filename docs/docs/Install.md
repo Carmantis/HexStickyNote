@@ -1,5 +1,31 @@
 # Building and installing
 
+## Downloading
+
+Installers for each version are on the [releases page](https://github.com/Carmantis/HexStickyNote/releases):
+
+| System | File |
+| --- | --- |
+| Windows | `HexStickyNote_<version>_x64-setup.exe` (or the `.msi`) |
+| Debian, Ubuntu | `HexStickyNote_<version>_amd64.deb`: `sudo apt install ./HexStickyNote_*.deb` |
+| Other Linux | `HexStickyNote_<version>_amd64.AppImage`: make it executable and run it |
+| Arch | the `.deb` through `packaging/arch/PKGBUILD` (below) |
+
+The Windows installer is not signed, so Windows SmartScreen warns the first time: **More info → Run anyway**.
+
+## Releasing
+
+Releases are built by `.github/workflows/release.yml`. Raise the version in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `mcp-server/package.json`, `mcp-server/src/index.ts` and `packaging/arch/PKGBUILD`, merge to `main`, then tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow builds the Linux packages on Ubuntu 22.04 and the Windows installers on Windows, each with the HexTime sidecar built from HexTime's public repository at the tag in `HEXTIME_REF`, and attaches them to a **draft** release. Try the installers, edit the notes, then press **Publish release** on GitHub. Started by hand (Actions → Release → Run workflow), the workflow only builds, and keeps the installers as workflow artifacts.
+
+When HexTime gets a new database migration, raise `HEXTIME_REF` in the workflow and release HexStickyNote again ([Time tracking](Time-tracking.md#keeping-it-up-to-date)).
+
 ## Building
 
 ```bash

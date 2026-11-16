@@ -1,0 +1,118 @@
+name: Release
+
+# A version tag (v1.2.3) builds the installers on Linux and Windows, with the
+# HexTime sidecar, and attaches them to a DRAFT GitHub release. Test the
+# installers, then publish the draft by hand on GitHub.
+#
+# HexTime is built from its public repository at HEXTIME_REF. When HexTime
+# gets a new database migration, raise HEXTIME_REF and release HexStickyNote
+# again (docs/docs/Time-tracking.md).
+#
+# Run it by hand (Actions -> Release -> Run workflow) to try the builds
+# without a release: the installers are then kept as workflow artifacts.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  HEXTIME_REPOSITORY: Carmantis/HexTime
+  HEXTIME_REF: v0.1.0
+
+jobs:
+  draft:
+    name: Draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft (once per tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --verify-tag --generate-notes \
+              --title "HexStickyNote ${GITHUB_REF_NAME#v}"
+
+  build:
+    name: Installers (${{ matrix.name }})
+    needs: draft
+    # Also runs when started by hand, when there is no draft to wait for
+    if: ${{ !cancelled() && needs.draft.result != 'failure' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported Ubuntu, so the packages run on as many
+          # distributions as possible (they need the system's WebKitGTK)
+          - name: Linux
+            os: ubuntu-22.04
+            bundles: deb,appimage
+          - name: Windows
+            os: windows-latest
+            bundles: nsis,msi
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Git Bash on Windows: sidecar/hextime/build.sh is a Bash script
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check out HexTime ${{ env.HEXTIME_REF }}
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.HEXTIME_REPOSITORY }}
+          ref: ${{ env.HEXTIME_REF }}
+          path: HexTime
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev build-essential file patchelf
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the HexTime sidecar
+        run: HEXTIME_DIR="$PWD/HexTime" bash sidecar/hextime/build.sh
+
+      - name: Build the installers
+        run: npm run tauri -- build --config src-tauri/tauri.hextime.conf.json --bundles ${{ matrix.bundles }}
+
+      - name: Collect the installers
+        id: files
+        run: |
+          mkdir -p dist-installers
+          find src-tauri/target/release/bundle \
+            \( -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' -o -name '*.msi' \) \
+            -exec cp {} dist-installers/ \;
+          ls -l dist-installers
+          test -n "$(ls dist-installers)"
+
+      - name: Keep them as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.name }}
+          path: dist-installers/
+
+      - name: Attach them to the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist-installers/* --repo "$GITHUB_REPOSITORY" --clobber

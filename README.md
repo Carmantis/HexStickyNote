@@ -107,6 +107,10 @@ the MCP server starts HexTime itself. The calendar tools need Node.js 22.13 or n
 **Tip**: When Claude creates or modifies notes, click the refresh button (🔄) in HexStickyNote to see the changes immediately.
 
 
+## Download
+
+Installers for Windows and Linux are on the [releases page](https://github.com/Carmantis/HexStickyNote/releases). How releases are made is in [docs/docs/Install.md](docs/docs/Install.md).
+
 ## Build & Release
 
 To create a production installer:
