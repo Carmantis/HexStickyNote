@@ -31,7 +31,7 @@ The carousel is a ring seen slightly from above. Only the card in front is sharp
 
 ### All notes at a glance
 
-The four-square button next to the folder menu folds the carousel into a grid of small tiles, newest first, and back. Start typing to search the titles, text and folder names. Enter or a click on a tile brings that note to the front of the carousel; Esc clears the search, and a second Esc goes back to the carousel.
+The four-square button next to the folder menu folds the carousel into a grid of small tiles, newest first, and back. Start typing to search the titles, text and folder names. Enter or a click on a tile brings that note to the front of the carousel and opens it; Esc clears the search, and a second Esc goes back to the carousel.
 
 ### Folders
 

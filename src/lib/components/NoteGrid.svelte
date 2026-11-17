@@ -4,7 +4,8 @@
    *
    * The tiles fly out of the middle of the view when the grid opens and back
    * into it when it closes (`leaving`), so the carousel seems to fold into the
-   * grid and back. Clicking a tile brings that note to the front of the carousel.
+   * grid and back. Clicking a tile brings that note to the front of the carousel
+   * and opens it for editing.
    */
 
   import { onMount } from "svelte";
@@ -15,7 +16,6 @@
   export let leaving = false;
 
   let query = "";
-  let grid: HTMLDivElement;
   let searchInput: HTMLInputElement;
 
   $: showFolder = $cardStore.folder === null;
@@ -56,7 +56,7 @@
   }
 
   function open(card: Card) {
-    cardStore.showInCarousel(card.id);
+    cardStore.showInCarousel(card.id, true);
   }
 
   function handleSearchKeydown(event: KeyboardEvent) {
@@ -70,7 +70,9 @@
    * the grid; the CSS animations move it between there and its own place.
    */
   function fromCenter(node: HTMLElement, index: number) {
-    const area = grid.getBoundingClientRect();
+    // Not `grid`: bind:this is set only after the tiles inside it are created
+    const area = node.closest(".grid-scroll")?.getBoundingClientRect();
+    if (!area) return;
     const tile = node.getBoundingClientRect();
     const dx = area.left + area.width / 2 - (tile.left + tile.width / 2);
     const dy = area.top + Math.min(area.height, 500) / 2 - (tile.top + tile.height / 2);
@@ -131,7 +133,7 @@
     </div>
   </div>
 
-  <div class="grid-scroll" bind:this={grid}>
+  <div class="grid-scroll">
     {#if matches.length === 0}
       <p class="no-results">No notes match “{query}”</p>
     {:else}

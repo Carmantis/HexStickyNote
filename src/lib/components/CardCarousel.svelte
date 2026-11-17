@@ -75,11 +75,13 @@
 
         // Put the picked card in front without spinning there, then unfold
         await fold.set(1, { duration: 0 });
-        focusPickedCard();
+        const opening = focusPickedCard();
         shown = "carousel";
         await tick();
         await nextFrame();
         await fold.set(0, { duration: 480, easing: cubicOut });
+        // A tile that was clicked opens straight into the editor
+        if (opening) cardStore.enterEditMode(opening);
       }
     } finally {
       // A layout toggled again during the animation is picked up by `$: if (wanted ...)`
@@ -87,15 +89,30 @@
     }
   }
 
-  function focusPickedCard() {
+  /** Bring the card picked in the grid to the front; its id if it should open */
+  function focusPickedCard(): string | null {
     const id = $cardStore.focusCardId;
-    if (!id) return;
+    const opens = $cardStore.focusOpens;
+    if (!id) return null;
     cardStore.clearFocus();
     const index = cards.findIndex((c) => c.id === id);
     if (index !== -1) {
       currentIndex = index;
-      setRotation(-index * angleIncrement, true);
+      faceCard(index, true);
+      return opens ? id : null;
     }
+    return null;
+  }
+
+  /**
+   * Bring card `index` to the front through the nearest turn of the ring.
+   * The ring's angle keeps growing as it is turned (-450° is the same place
+   * as -90°); setting the plain angle would spin it all the way back.
+   */
+  function faceCard(index: number, instant = false) {
+    const target = -index * angleIncrement;
+    const turns = Math.round((rotation - target) / 360);
+    setRotation(target + turns * 360, instant);
   }
 
   function setRotation(value: number, instant = false) {
@@ -185,7 +202,7 @@
       if (shouldRecalculate) {
         currentIndex = targetIndex;
         // Snap rotation to align the current card perfectly
-        setRotation(-currentIndex * angleIncrement);
+        faceCard(currentIndex);
       }
     }
   }

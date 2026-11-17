@@ -82,6 +82,8 @@ interface CardState {
   layout: NotesLayout;
   /** Card the carousel should bring to the front (picked from the grid) */
   focusCardId: string | null;
+  /** Open that card for editing once it is in front */
+  focusOpens: boolean;
   editingCardId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -98,6 +100,7 @@ function createCardStore() {
     folder: typeof window !== 'undefined' ? loadFolderFilter() : null,
     layout: typeof window !== 'undefined' ? loadLayout() : 'carousel',
     focusCardId: null,
+    focusOpens: false,
     editingCardId: null,
     isLoading: false,
     error: null
@@ -363,15 +366,15 @@ function createCardStore() {
       setLayout(layout);
     },
 
-    /** Go back to the carousel with this card in front */
-    showInCarousel(cardId: string) {
-      update(s => ({ ...s, focusCardId: cardId }));
+    /** Go back to the carousel with this card in front, and open it if asked */
+    showInCarousel(cardId: string, open = false) {
+      update(s => ({ ...s, focusCardId: cardId, focusOpens: open }));
       setLayout('carousel');
     },
 
     /** The carousel has brought the focused card to the front */
     clearFocus() {
-      update(s => ({ ...s, focusCardId: null }));
+      update(s => ({ ...s, focusCardId: null, focusOpens: false }));
     },
 
     /**

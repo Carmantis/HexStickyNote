@@ -59,10 +59,21 @@
     }
   }
 
+  /** Whether the mouse button went down inside this card */
+  let pressedInside = false;
+
+  function handlePointerDown(event: PointerEvent) {
+    pressedInside = !!cardElement?.contains(event.target as Node);
+  }
+
   // Handle click outside -> exit edit mode
   function handleClickOutside(event: MouseEvent) {
     // Chatting with the assistant or moving the note to a folder keeps it open
     if ((event.target as Element | null)?.closest?.('.assistant-panel, .folder-menu')) return;
+
+    // Selecting text and letting go outside the card ends in a click outside
+    // it; only a press that also started outside means "close"
+    if (pressedInside) return;
 
     if ($mode === 'edit' && cardElement && !cardElement.contains(event.target as Node)) {
       cardStore.exitEditMode(card.id);
@@ -80,6 +91,8 @@
     // Escape to exit edit mode
     // (Escape that closed a menu has been handled already)
     if (event.key === 'Escape' && $mode === 'edit' && !event.defaultPrevented) {
+      // Handled: the page must not close the whole workspace as well
+      event.preventDefault();
       cardStore.exitEditMode(card.id);
     }
 
@@ -91,11 +104,13 @@
   }
 
   onMount(() => {
+    document.addEventListener('pointerdown', handlePointerDown, true);
     document.addEventListener('click', handleClickOutside);
     document.addEventListener('keydown', handleKeydown);
   });
 
   onDestroy(() => {
+    document.removeEventListener('pointerdown', handlePointerDown, true);
     document.removeEventListener('click', handleClickOutside);
     document.removeEventListener('keydown', handleKeydown);
   });
