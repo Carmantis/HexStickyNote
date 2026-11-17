@@ -13,7 +13,7 @@ import { getTimer, listTimeEntries, startTimer, stopTimer } from "./hextime.js";
 
 const server = new McpServer({
   name: "hexstickynote",
-  version: "1.0.0",
+  version: "1.0.1",
 });
 
 server.tool(
