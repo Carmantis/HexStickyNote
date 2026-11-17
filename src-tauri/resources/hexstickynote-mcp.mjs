@@ -40271,7 +40271,7 @@ async function stopTimer() {
 // dist/index.js
 var server = new McpServer({
   name: "hexstickynote",
-  version: "1.0.0"
+  version: "1.0.1"
 });
 server.tool("create_note", "Create a new sticky note with markdown content in HexStickyNote", {
   content: external_exports.string().describe("The markdown content for the new note"),
