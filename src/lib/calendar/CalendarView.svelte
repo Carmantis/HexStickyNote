@@ -158,6 +158,7 @@
     align-items: center;
     gap: var(--space-2);
     flex: 1;
+    min-width: 0;
   }
 
   .toolbar-center {
@@ -168,7 +169,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    flex: 1;
+    /* Only as wide as its button: the spare room goes to the title */
+    flex: 0 0 auto;
     justify-content: flex-end;
   }
 
@@ -212,6 +214,11 @@
     color: var(--color-text);
     margin-left: var(--space-2);
     text-transform: capitalize;
+    /* One line; shortened with … when the panel is narrow */
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
 
