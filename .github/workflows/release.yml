@@ -21,7 +21,7 @@ permissions:
 
 env:
   HEXTIME_REPOSITORY: Carmantis/HexTime
-  HEXTIME_REF: v0.1.0
+  HEXTIME_REF: v0.1.1
 
 jobs:
   draft:

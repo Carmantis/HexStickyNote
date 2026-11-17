@@ -356,6 +356,9 @@
 
 <style>
   .hud {
+    /* One width for the top bar, the calendar and time panels and the
+       assistant box, so their edges line up */
+    --hud-width: min(800px, calc(100% - 3rem));
     position: fixed;
     inset: 0;
     background: transparent;
@@ -385,7 +388,7 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.75rem 1.5rem;
-    width: min(800px, calc(100% - 3rem));
+    width: var(--hud-width);
     margin: 1.5rem auto 0;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: var(--border-radius);
@@ -516,7 +519,7 @@
   .assistant-dock {
     position: relative;
     flex-shrink: 0;
-    width: min(800px, calc(100% - 3rem));
+    width: var(--hud-width);
     margin: 0.75rem auto 1.5rem;
     z-index: 50;
     pointer-events: auto;
@@ -550,8 +553,11 @@
   }
 
   .view-panel {
+    width: var(--hud-width);
     height: calc(100% - 2.5rem);
-    margin: 1rem 1.5rem 1.5rem;
+    /* A card, not a wall: in a tall window room is left below it */
+    max-height: 760px;
+    margin: 1rem auto 1.5rem;
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     overflow: hidden;
